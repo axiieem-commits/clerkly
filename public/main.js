@@ -1,3 +1,22 @@
+import imageCompression from "./vendor/browser-image-compression.mjs";
+
+const compressionWorkerUrl = new URL("./vendor/browser-image-compression.js", import.meta.url).href;
+
+async function compressImage(file) {
+  const options = {
+    maxSizeMB: 0.5,
+    maxWidthOrHeight: 1600,
+    useWebWorker: true,
+    libURL: compressionWorkerUrl
+  };
+  const compressedFile = await imageCompression(file, options);
+  console.info("Image compression", {
+    originalMB: Number((file.size / 1024 / 1024).toFixed(2)),
+    compressedMB: Number((compressedFile.size / 1024 / 1024).toFixed(2))
+  });
+  return compressedFile;
+}
+
 const Auth = {
   currentUser: null,
 
@@ -154,6 +173,8 @@ const Clerkly = {
     document.getElementById("caseChiefComplaint").textContent = item.chief_complaint || "Not recorded.";
     document.getElementById("casePresentation").textContent = item.presentation;
     document.getElementById("caseSystemicReview").textContent = item.systemic_review || "Not recorded.";
+    document.getElementById("caseMainSystem").textContent = item.main_system || "No system selected";
+    document.getElementById("caseSystemProblem").textContent = item.system_problem || "";
     document.getElementById("casePmh").textContent = item.past_medical_history || "Not recorded.";
     document.getElementById("casePsh").textContent = item.past_surgical_history || "Not recorded.";
     document.getElementById("caseDrugHistory").textContent = item.drug_history || "Not recorded.";
@@ -215,7 +236,10 @@ const Clerkly = {
     if (!form) return;
     const editId = new URLSearchParams(location.search).get("edit");
     const imageInput = document.getElementById("caseImageInput");
-    imageInput.addEventListener("change", () => Clerkly.prepareImage(imageInput.files[0]));
+    imageInput.addEventListener("change", () => Clerkly.prepareImage(imageInput.files[0], {
+      inputId: "caseImageInput", dataId: "caseImageData", previewId: "imagePreview", helpId: "caseImageHelp"
+    }));
+    Clerkly.initClerkingGuides();
     if (editId) {
       try {
         const response = await fetch(`/api/cases/${encodeURIComponent(editId)}`);
@@ -224,6 +248,7 @@ const Clerkly = {
         Array.from(form.elements).forEach(field => {
           if (field.name && field.name !== "case_image" && field.type !== "file" && savedCase[field.name] !== undefined && savedCase[field.name] !== null) field.value = savedCase[field.name];
         });
+        Clerkly.updateSystemProblems(savedCase.system_problem || "");
         if (savedCase.case_image) {
           const preview = document.getElementById("imagePreview");
           preview.src = savedCase.case_image;
@@ -262,24 +287,146 @@ const Clerkly = {
     });
   },
 
-  prepareImage(file) {
-    const notice = document.getElementById("formNotice");
+  async prepareImage(file, targets) {
     if (!file) return;
-    if (file.size > 3 * 1024 * 1024) {
-      notice.className = "notice error";
-      notice.textContent = "Please choose an image smaller than 3 MB.";
-      notice.style.display = "block";
-      document.getElementById("caseImageInput").value = "";
-      return;
+    const help = document.getElementById(targets.helpId);
+    const originalHelp = help?.textContent || "";
+    try {
+      if (help) help.textContent = "Compressing image…";
+      const compressed = await compressImage(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        document.getElementById(targets.dataId).value = reader.result;
+        const preview = document.getElementById(targets.previewId);
+        preview.src = reader.result;
+        preview.classList.remove("hidden");
+        if (help) help.textContent = `Ready to upload · ${(compressed.size / 1024).toFixed(0)} KB after compression.`;
+      };
+      reader.readAsDataURL(compressed);
+    } catch (error) {
+      document.getElementById(targets.inputId).value = "";
+      if (help) help.textContent = error.message || "Could not compress this image. Try another JPG, PNG or WebP file.";
+      setTimeout(() => { if (help && help.textContent.includes("Could not")) help.textContent = originalHelp; }, 5000);
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      document.getElementById("caseImageData").value = reader.result;
-      const preview = document.getElementById("imagePreview");
-      preview.src = reader.result;
-      preview.classList.remove("hidden");
-    };
-    reader.readAsDataURL(file);
+  },
+
+  systemOptions: {
+    General: ["Fever", "Lethargy / fatigue", "Loss of appetite", "Weight loss", "Other"],
+    Cardiovascular: ["Chest pain / angina", "Palpitations", "Tachycardia / bradycardia", "Cyanosis", "Edema", "Other"],
+    Respiratory: ["Cough", "Hemoptysis", "Shortness of breath", "Tachypnea", "Stridor", "Wheeze", "Hoarseness", "Other"],
+    Gastrointestinal: ["Dysphagia", "Vomiting", "Diarrhea", "Pale / bloody / mucous stool", "Change of bowel habit", "Constipation", "Other"],
+    Genitourinary: ["Dysuria", "Polyuria", "Oliguria", "Frequency", "Urgency", "Hematuria", "Nocturia", "Hesitancy", "Incontinence", "Other"],
+    Neurological: ["Headache", "Dizziness", "Fits / seizure", "Visual disturbance", "Loss of sensation", "Limb weakness", "Other"],
+    Musculoskeletal: ["Arthralgia", "Myalgia", "Muscle weakness", "Joint swelling", "Other"]
+  },
+
+  updateSystemProblems(selectedProblem = "") {
+    const system = document.getElementById("mainSystem");
+    const problem = document.getElementById("systemProblem");
+    if (!system || !problem) return;
+    const options = Clerkly.systemOptions[system.value] || [];
+    problem.disabled = !options.length;
+    problem.innerHTML = options.length ? `<option value="">Select a symptom</option>${options.map(value => `<option>${Clerkly.escape(value)}</option>`).join("")}` : '<option value="">Select a main system first</option>';
+    if (options.includes(selectedProblem)) problem.value = selectedProblem;
+    document.querySelectorAll("[data-system]").forEach(button => button.classList.toggle("active", button.dataset.system === system.value));
+  },
+
+  initClerkingGuides() {
+    const system = document.getElementById("mainSystem");
+    if (!system) return;
+    system.addEventListener("change", () => Clerkly.updateSystemProblems());
+    document.querySelectorAll("[data-system]").forEach(button => button.addEventListener("click", () => {
+      system.value = button.dataset.system;
+      Clerkly.updateSystemProblems();
+      document.getElementById("systemProblem").focus();
+    }));
+    document.querySelectorAll("[data-hopi-guide]").forEach(button => button.addEventListener("click", () => {
+      const field = document.getElementById("hopiText");
+      const prefix = field.value.trim() ? "\n" : "";
+      field.value += `${prefix}${button.dataset.hopiGuide}: `;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    }));
+  },
+
+  async initProfile() {
+    const form = document.getElementById("profileForm");
+    if (!form) return;
+    const notice = document.getElementById("profileNotice");
+    const imageInput = document.getElementById("profileImageInput");
+    imageInput.addEventListener("change", () => Clerkly.prepareImage(imageInput.files[0], {
+      inputId: "profileImageInput", dataId: "profileImageData", previewId: "profilePhotoImage", helpId: "profileImageHelp"
+    }));
+    try {
+      const response = await fetch("/api/profile");
+      const profile = await response.json();
+      if (!response.ok) throw new Error(profile.message);
+      document.getElementById("profileDisplayName").value = profile.displayName || "";
+      document.getElementById("profileUsername").value = profile.username || "";
+      document.getElementById("profileYear").value = profile.year || "Year 3";
+      document.getElementById("profilePosting").value = profile.posting || "Internal Medicine";
+      document.getElementById("profileEmail").value = profile.email || "";
+      Clerkly.renderProfileCard(profile);
+    } catch (error) {
+      notice.className = "notice error profile-notice";
+      notice.textContent = error.message || "Could not load your profile.";
+      notice.style.display = "block";
+    }
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const button = document.getElementById("profileSubmitButton");
+      button.disabled = true;
+      button.textContent = "Saving…";
+      try {
+        const response = await fetch("/api/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+        const profile = await response.json();
+        if (!response.ok) throw new Error(profile.message);
+        Auth.currentUser = profile;
+        localStorage.setItem("clerkly_user", JSON.stringify(profile));
+        Clerkly.renderProfileCard(profile);
+        Clerkly.applyProfileUI(profile);
+        notice.className = "notice profile-notice";
+        notice.textContent = "Profile saved successfully.";
+      } catch (error) {
+        notice.className = "notice error profile-notice";
+        notice.textContent = error.message || "Could not save your profile.";
+      } finally {
+        notice.style.display = "block";
+        button.disabled = false;
+        button.textContent = "Save profile";
+      }
+    });
+  },
+
+  renderProfileCard(profile) {
+    const name = profile.displayName || "Medical Student";
+    document.getElementById("profileCardName").textContent = name;
+    document.getElementById("profileCardUsername").textContent = `@${profile.username || "student"}`;
+    document.getElementById("profilePhotoInitials").textContent = Clerkly.initials(name);
+    if (profile.avatarUrl) {
+      const image = document.getElementById("profilePhotoImage");
+      image.src = profile.avatarUrl;
+      image.classList.remove("hidden");
+    }
+  },
+
+  initials(name) {
+    return String(name || "Medical Student").trim().split(/\s+/).slice(0, 2).map(word => word[0]).join("").toUpperCase();
+  },
+
+  applyProfileUI(profile = Auth.profile() || {}) {
+    const initials = Clerkly.initials(profile.displayName);
+    document.querySelectorAll(".avatar").forEach(element => {
+      element.textContent = profile.avatarUrl ? "" : initials;
+      element.style.backgroundImage = profile.avatarUrl ? `url("${profile.avatarUrl}")` : "";
+    });
+    const bannerAvatar = document.querySelector(".student-avatar");
+    if (bannerAvatar) {
+      bannerAvatar.textContent = profile.avatarUrl ? "" : initials;
+      bannerAvatar.style.backgroundImage = profile.avatarUrl ? `url("${profile.avatarUrl}")` : "";
+      bannerAvatar.style.backgroundSize = "cover";
+      bannerAvatar.style.backgroundPosition = "center";
+    }
   },
 
   async initProgress() {
@@ -307,6 +454,7 @@ const Clerkly = {
     document.getElementById("dashboardStudentName").textContent = profile.displayName;
     document.getElementById("dashboardYear").textContent = profile.year;
     document.getElementById("dashboardPosting").textContent = profile.posting;
+    Clerkly.applyProfileUI(profile);
     document.getElementById("dashboardDate").textContent = new Intl.DateTimeFormat("en-MY", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date());
     document.getElementById("dashboardCaseCount").textContent = saved.length;
     document.getElementById("dashboardReviewCount").textContent = toReview.length;
@@ -362,6 +510,9 @@ const Clerkly = {
   }
 };
 
+window.Auth = Auth;
+window.Clerkly = Clerkly;
+
 document.addEventListener("DOMContentLoaded", async () => {
   if (Auth.initLogin()) return;
   if (!await Auth.guard()) return;
@@ -369,5 +520,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Clerkly.initAddCase();
   Clerkly.initProgress();
   Clerkly.initDashboard();
+  Clerkly.initProfile();
+  Clerkly.applyProfileUI();
   Clerkly.initFloatingAssistant();
 });

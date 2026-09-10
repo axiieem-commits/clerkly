@@ -9,12 +9,14 @@ Follow these sections in order. You only need the Supabase **Project URL** and *
 3. Wait for the project to finish preparing.
 4. Open **SQL Editor** and select **New query**.
 5. Open `supabase/migrations/001_clerkly_schema.sql` from this project, copy the whole file into the SQL Editor, and select **Run**.
-6. The script creates:
+6. Open `supabase/migrations/002_profiles_and_system_review.sql`, copy the whole file into a new query, and select **Run**.
+7. The scripts create:
    - the `clinical_cases` table;
+   - the private student `profiles` table;
    - owner-only Row Level Security policies; and
-   - the private `case-images` Storage bucket.
-7. Open **Authentication → Providers → Email** and keep Email enabled. Email confirmation is recommended for the deployed site.
-8. Open the project's **Connect** dialog or **Settings → API Keys** and copy:
+   - private `case-images` and `profile-images` Storage buckets.
+8. Open **Authentication → Providers → Email** and keep Email enabled. Email confirmation is recommended for the deployed site.
+9. Open the project's **Connect** dialog or **Settings → API Keys** and copy:
    - Project URL → `SUPABASE_URL`
    - Publishable key beginning with `sb_publishable_` → `SUPABASE_PUBLISHABLE_KEY`
 
@@ -107,11 +109,12 @@ Test the deployed website in a private/incognito browser window:
 
 1. Create and confirm an account.
 2. Sign in and create an anonymous case.
-3. Upload a non-identifiable learning image under 3 MB.
-4. Edit the case and save more information.
-5. Mark it reviewed and then delete it.
-6. Sign out and confirm that protected pages return to the login page.
-7. Open `https://YOUR-VERCEL-ADDRESS/api/health`; it should report that the database is configured.
+3. Upload a non-identifiable learning image and confirm that the page compresses it before saving.
+4. Open Profile, update your student details and upload a profile picture.
+5. Edit the case and save more information.
+6. Mark it reviewed and then delete it.
+7. Sign out and confirm that protected pages return to the login page.
+8. Open `https://YOUR-VERCEL-ADDRESS/api/health`; it should report that the database is configured.
 
 Each later push to the `main` branch automatically creates a new Vercel production deployment. Other branches and pull requests receive preview deployments.
 

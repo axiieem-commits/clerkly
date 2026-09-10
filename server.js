@@ -8,7 +8,8 @@ const { createPublicClient, createUserClient, supabaseConfig } = require("./db")
 const app = express();
 const PORT = process.env.PORT || 3000;
 const IMAGE_BUCKET = "case-images";
-const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const PROFILE_IMAGE_BUCKET = "profile-images";
+const MAX_IMAGE_BYTES = 1024 * 1024;
 const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
 const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
@@ -20,7 +21,7 @@ app.use(express.static(path.join(__dirname, "public")));
 
 const CASE_FIELDS = [
   "title", "posting", "patient_age", "patient_gender", "patient_race",
-  "chief_complaint", "presentation", "systemic_review", "past_medical_history",
+  "chief_complaint", "presentation", "main_system", "system_problem", "systemic_review", "past_medical_history",
   "past_surgical_history", "drug_history", "allergy_history", "family_history",
   "social_history", "findings", "provisional_diagnosis", "differential_diagnoses",
   "investigations", "management_plan", "notes_snippets", "learning", "tags", "status"
@@ -52,14 +53,27 @@ function parseCookies(header = "") {
   }, {});
 }
 
-function safeUser(user) {
+function safeUser(user, profile = {}) {
   return {
     id: user.id,
     email: user.email,
-    displayName: user.user_metadata?.display_name || user.email?.split("@")[0] || "Medical Student",
-    year: user.user_metadata?.year || "Year 3",
-    posting: user.user_metadata?.posting || "Internal Medicine"
+    displayName: profile.display_name || user.user_metadata?.display_name || user.email?.split("@")[0] || "Medical Student",
+    username: profile.username || "",
+    year: profile.year_of_study || user.user_metadata?.year || "Year 3",
+    posting: profile.posting || user.user_metadata?.posting || "Internal Medicine",
+    avatarUrl: profile.avatar_url || ""
   };
+}
+
+async function profileForUser(client, user) {
+  const { data, error } = await client.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
+  if (error && !["42P01", "PGRST205"].includes(error.code)) throw error;
+  let avatarUrl = "";
+  if (data?.avatar_path) {
+    const { data: signed } = await client.storage.from(PROFILE_IMAGE_BUCKET).createSignedUrl(data.avatar_path, 3600);
+    avatarUrl = signed?.signedUrl || "";
+  }
+  return safeUser(user, { ...(data || {}), avatar_url: avatarUrl });
 }
 
 async function requireUser(req, res, next) {
@@ -111,15 +125,15 @@ function validateCase(values) {
   return null;
 }
 
-async function uploadImage(client, userId, dataUrl) {
+async function uploadImage(client, userId, dataUrl, bucket = IMAGE_BUCKET) {
   if (!dataUrl) return null;
   const match = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl);
   if (!match) throw new Error("Please upload a JPG, PNG or WebP image.");
   const bytes = Buffer.from(match[2], "base64");
-  if (bytes.length > MAX_IMAGE_BYTES) throw new Error("Please choose an image smaller than 3 MB.");
+  if (bytes.length > MAX_IMAGE_BYTES) throw new Error("The compressed image must be smaller than 1 MB.");
   const extension = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
   const objectPath = `${userId}/${crypto.randomUUID()}.${extension}`;
-  const { error } = await client.storage.from(IMAGE_BUCKET).upload(objectPath, bytes, { contentType: `image/${match[1].toLowerCase()}`, upsert: false });
+  const { error } = await client.storage.from(bucket).upload(objectPath, bytes, { contentType: `image/${match[1].toLowerCase()}`, upsert: false });
   if (error) throw new Error(`Image upload failed: ${error.message}`);
   return objectPath;
 }
@@ -155,11 +169,51 @@ app.post("/api/auth/login", async (req, res, next) => {
   } catch (error) { next(error); }
 });
 
-app.get("/api/auth/session", requireUser, (req, res) => res.json({ user: safeUser(req.user) }));
+app.get("/api/auth/session", requireUser, async (req, res, next) => {
+  try { res.json({ user: await profileForUser(req.supabase, req.user) }); }
+  catch (error) { next(error); }
+});
 
 app.post("/api/auth/logout", (req, res) => {
   clearSessionCookies(res);
   res.json({ message: "Signed out." });
+});
+
+app.get("/api/profile", requireUser, async (req, res, next) => {
+  try { res.json(await profileForUser(req.supabase, req.user)); }
+  catch (error) { next(error); }
+});
+
+app.put("/api/profile", requireUser, async (req, res, next) => {
+  let uploadedPath = null;
+  try {
+    const displayName = String(req.body.display_name || "").trim();
+    const username = String(req.body.username || "").trim().toLowerCase();
+    const yearOfStudy = String(req.body.year_of_study || "").trim();
+    const posting = String(req.body.posting || "").trim();
+    if (!displayName || !/^[a-z0-9_.-]{3,30}$/.test(username) || !yearOfStudy || !posting) {
+      return res.status(400).json({ message: "Enter a name, a valid username, your year of study and current posting." });
+    }
+    const { data: existing, error: existingError } = await req.supabase.from("profiles").select("avatar_path").eq("user_id", req.user.id).maybeSingle();
+    if (existingError) throw existingError;
+    uploadedPath = await uploadImage(req.supabase, req.user.id, req.body.profile_image, PROFILE_IMAGE_BUCKET);
+    const profileData = { user_id: req.user.id, display_name: displayName, username, year_of_study: yearOfStudy, posting, updated_at: new Date().toISOString() };
+    if (uploadedPath) profileData.avatar_path = uploadedPath;
+    const { error } = await req.supabase.from("profiles").upsert(profileData, { onConflict: "user_id" });
+    if (error) {
+      if (error.code === "23505") {
+        if (uploadedPath) await req.supabase.storage.from(PROFILE_IMAGE_BUCKET).remove([uploadedPath]);
+        uploadedPath = null;
+        return res.status(409).json({ message: "That username is already in use. Please choose another." });
+      }
+      throw error;
+    }
+    if (uploadedPath && existing?.avatar_path) await req.supabase.storage.from(PROFILE_IMAGE_BUCKET).remove([existing.avatar_path]);
+    res.json(await profileForUser(req.supabase, req.user));
+  } catch (error) {
+    if (uploadedPath) await req.supabase.storage.from(PROFILE_IMAGE_BUCKET).remove([uploadedPath]);
+    next(error);
+  }
 });
 
 app.get("/api/cases", requireUser, async (req, res, next) => {

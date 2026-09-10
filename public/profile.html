@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clerkly — Profile</title><link rel="stylesheet" href="Style.css"></head>
+<body class="portal-body">
+  <aside class="portal-sidebar">
+    <a class="portal-brand" href="index.html"><span class="logo-mark">C</span><span>clerkly<span class="logo-dot">.</span></span></a>
+    <nav><a href="index.html"><span>⌂</span>Home</a><a href="cases.html"><span>▤</span>My cases</a><a href="add-case.html"><span>＋</span>Add case</a><a href="library.html"><span>⌘</span>Library</a><a href="progress.html"><span>↗</span>Progress</a><a class="active" href="profile.html"><span>●</span>Profile</a><button onclick="document.getElementById('chatFab').click()"><span>✦</span>AI study copilot</button></nav>
+    <button class="portal-logout" onclick="Auth.logout()"><span>↪</span>Logout</button>
+    <div class="sidebar-privacy"><strong>Your learning identity.</strong><span>Keep patient information out of your personal profile.</span></div>
+  </aside>
+  <main class="portal-main portal-page-main">
+    <header class="portal-top"><div><p class="portal-breadcrumb">Clerkly / <strong>Profile</strong></p><h1>Profile management</h1></div><div class="portal-top-actions"><a href="index.html" class="secondary-button">← Dashboard</a><a class="avatar profile-avatar-link" href="profile.html" aria-label="Manage profile">AZ</a></div></header>
+    <section class="portal-notice compact-notice"><span>PROFILE</span><div><strong>Personalise your clinical learning workspace.</strong><p>Your email comes from your secure account and cannot be changed on this page.</p></div></section>
+    <section class="profile-shell">
+      <aside class="profile-photo-panel">
+        <div class="profile-photo-preview" id="profilePhotoPreview"><span id="profilePhotoInitials">MS</span><img id="profilePhotoImage" class="hidden" alt="Profile picture preview"></div>
+        <h2 id="profileCardName">Medical Student</h2><p id="profileCardUsername">@student</p>
+        <label class="secondary-button profile-upload-button">Upload profile picture<input id="profileImageInput" type="file" accept="image/jpeg,image/png,image/webp" hidden></label>
+        <span class="form-help" id="profileImageHelp">JPG, PNG or WebP. Compressed to about 0.5 MB before upload.</span>
+      </aside>
+      <form class="profile-form" id="profileForm">
+        <header><p class="eyebrow">STUDENT DETAILS</p><h2>About you</h2><p>These details appear on your dashboard and help organise your learning.</p></header>
+        <input type="hidden" name="profile_image" id="profileImageData">
+        <div class="section-fields two-fields">
+          <label class="form-field">Full name<input name="display_name" id="profileDisplayName" maxlength="100" required placeholder="Your name"></label>
+          <label class="form-field">Username<div class="username-input"><span>@</span><input name="username" id="profileUsername" maxlength="30" pattern="[A-Za-z0-9_.-]{3,30}" required placeholder="medicalstudent"></div><span class="form-help">3–30 letters, numbers, dots, hyphens or underscores.</span></label>
+          <label class="form-field">Year of study<select name="year_of_study" id="profileYear" required><option>Year 1</option><option>Year 2</option><option selected>Year 3</option><option>Year 4</option><option>Year 5</option><option>Year 6</option><option>Graduate</option><option>Other</option></select></label>
+          <label class="form-field">Current posting<select name="posting" id="profilePosting" required><option>Internal Medicine</option><option>Surgery</option><option>Paediatrics</option><option>O&amp;G</option><option>Emergency</option><option>Primary Care</option><option>Psychiatry</option><option>Orthopaedics</option><option>Other</option></select></label>
+          <label class="form-field full-field">Email address<input id="profileEmail" type="email" disabled><span class="form-help">Managed by Supabase Authentication.</span></label>
+        </div>
+        <div class="form-actions"><button class="primary-button" id="profileSubmitButton" type="submit">Save profile</button></div>
+        <div class="notice profile-notice" id="profileNotice"></div>
+      </form>
+    </section>
+  </main>
+  <script type="module" src="main.js"></script>
+</body>
+</html>

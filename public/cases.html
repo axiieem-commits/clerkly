@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Clerkly — My Cases</title><link rel="stylesheet" href="Style.css"></head>
 <body class="portal-body">
-<aside class="portal-sidebar"><a class="portal-brand" href="index.html"><span class="logo-mark">C</span><span>clerkly<span class="logo-dot">.</span></span></a><nav><a href="index.html"><span>⌂</span>Home</a><a class="active" href="cases.html"><span>▤</span>My cases</a><a href="add-case.html"><span>＋</span>Add case</a><a href="library.html"><span>⌘</span>Library</a><a href="progress.html"><span>↗</span>Progress</a><button onclick="document.getElementById('chatFab').click()"><span>✦</span>AI study copilot</button></nav><button class="portal-logout" onclick="Auth.logout()"><span>↪</span>Logout</button><div class="sidebar-privacy"><strong>Keep every case anonymous.</strong><span>No patient names, IDs or identifiable photographs.</span></div></aside>
-<main class="portal-main portal-page-main"><header class="portal-top"><div><p class="portal-breadcrumb">Clerkly / <strong>My cases</strong></p><h1>Clinical casebook</h1></div><div class="portal-top-actions"><a href="add-case.html" class="primary-button">+ New case</a><span class="avatar">AZ</span></div></header>
+<aside class="portal-sidebar"><a class="portal-brand" href="index.html"><span class="logo-mark">C</span><span>clerkly<span class="logo-dot">.</span></span></a><nav><a href="index.html"><span>⌂</span>Home</a><a class="active" href="cases.html"><span>▤</span>My cases</a><a href="add-case.html"><span>＋</span>Add case</a><a href="library.html"><span>⌘</span>Library</a><a href="progress.html"><span>↗</span>Progress</a><a href="profile.html"><span>●</span>Profile</a><button onclick="document.getElementById('chatFab').click()"><span>✦</span>AI study copilot</button></nav><button class="portal-logout" onclick="Auth.logout()"><span>↪</span>Logout</button><div class="sidebar-privacy"><strong>Keep every case anonymous.</strong><span>No patient names, IDs or identifiable photographs.</span></div></aside>
+<main class="portal-main portal-page-main"><header class="portal-top"><div><p class="portal-breadcrumb">Clerkly / <strong>My cases</strong></p><h1>Clinical casebook</h1></div><div class="portal-top-actions"><a href="add-case.html" class="primary-button">+ New case</a><a class="avatar profile-avatar-link" href="profile.html" aria-label="Manage profile">AZ</a></div></header>
 <section class="portal-notice compact-notice"><span>PRIVACY</span><div><strong>Record the learning, never the patient’s identity.</strong><p>Use anonymous descriptions and avoid recognizable photographs.</p></div></section>
 <section class="portal-casebook">
   <aside class="portal-case-list"><header><div><h2>Saved cases</h2><p>Search by topic or posting</p></div><a href="add-case.html">＋</a></header><label class="search-box">⌕<input id="caseSearch" placeholder="Search cases or postings"></label><div id="caseList" class="case-list"><p class="empty-state">Loading cases…</p></div></aside>
@@ -13,7 +13,7 @@
     <div class="portal-detail-grid clerking-detail-grid">
       <article class="card full-card"><h3 class="card-label">PRESENTING COMPLAINT</h3><p id="caseChiefComplaint">Not recorded.</p></article>
       <article class="card full-card"><h3 class="card-label">HISTORY OF PRESENTING ILLNESS</h3><p id="casePresentation"></p></article>
-      <article class="card full-card"><h3 class="card-label">SYSTEMIC REVIEW</h3><p id="caseSystemicReview">Not recorded.</p></article>
+      <article class="card full-card"><h3 class="card-label">SYSTEMIC REVIEW</h3><p class="case-system-selection"><b id="caseMainSystem">No system selected</b><span id="caseSystemProblem"></span></p><p id="caseSystemicReview">Not recorded.</p></article>
       <article class="card"><h3 class="card-label">PAST MEDICAL HISTORY</h3><p id="casePmh">Not recorded.</p></article>
       <article class="card"><h3 class="card-label">PAST SURGICAL HISTORY</h3><p id="casePsh">Not recorded.</p></article>
       <article class="card"><h3 class="card-label">DRUG HISTORY</h3><p id="caseDrugHistory">Not recorded.</p></article>
@@ -30,4 +30,4 @@
     </div>
     <footer class="sources"><strong>Evidence:</strong><a target="_blank" href="https://www.who.int/news-room/questions-and-answers/item/dengue-and-severe-dengue">WHO Dengue</a><a target="_blank" href="https://www.who.int/en/news-room/fact-sheets/detail/tuberculosis">WHO TB</a><a target="_blank" href="https://www.cdc.gov/food-safety/signs-symptoms/index.html">CDC Food Safety</a></footer>
   </section>
-</section></main><script src="main.js"></script></body></html>
+</section></main><script type="module" src="main.js"></script></body></html>

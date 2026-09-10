@@ -13,6 +13,8 @@ create table if not exists public.clinical_cases (
   patient_race text,
   chief_complaint text,
   presentation text not null,
+  main_system text,
+  system_problem text,
   systemic_review text,
   past_medical_history text,
   past_surgical_history text,
