@@ -1,0 +1,279 @@
+const express = require("express");
+const path = require("path");
+const crypto = require("crypto");
+const { GoogleGenAI } = require("@google/genai");
+require("dotenv").config();
+
+const { createPublicClient, createUserClient, supabaseConfig } = require("./db");
+const app = express();
+const PORT = process.env.PORT || 3000;
+const IMAGE_BUCKET = "case-images";
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
+const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
+
+app.disable("x-powered-by");
+app.use(express.json({ limit: "5mb" }));
+app.use(express.urlencoded({ extended: true, limit: "5mb" }));
+app.use(express.static(path.join(__dirname, "public")));
+
+const CASE_FIELDS = [
+  "title", "posting", "patient_age", "patient_gender", "patient_race",
+  "chief_complaint", "presentation", "systemic_review", "past_medical_history",
+  "past_surgical_history", "drug_history", "allergy_history", "family_history",
+  "social_history", "findings", "provisional_diagnosis", "differential_diagnoses",
+  "investigations", "management_plan", "notes_snippets", "learning", "tags", "status"
+];
+
+function cookieOptions(maxAge) {
+  return { httpOnly: true, secure: isProduction, sameSite: "lax", path: "/", maxAge };
+}
+
+function setSessionCookies(res, session) {
+  res.cookie("clerkly_access", session.access_token, cookieOptions((session.expires_in || 3600) * 1000));
+  res.cookie("clerkly_refresh", session.refresh_token, cookieOptions(30 * 24 * 60 * 60 * 1000));
+}
+
+function clearSessionCookies(res) {
+  const options = { httpOnly: true, secure: isProduction, sameSite: "lax", path: "/" };
+  res.clearCookie("clerkly_access", options);
+  res.clearCookie("clerkly_refresh", options);
+}
+
+function parseCookies(header = "") {
+  return header.split(";").reduce((cookies, part) => {
+    const separator = part.indexOf("=");
+    if (separator < 0) return cookies;
+    const key = part.slice(0, separator).trim();
+    try { cookies[key] = decodeURIComponent(part.slice(separator + 1).trim()); }
+    catch { cookies[key] = part.slice(separator + 1).trim(); }
+    return cookies;
+  }, {});
+}
+
+function safeUser(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    displayName: user.user_metadata?.display_name || user.email?.split("@")[0] || "Medical Student",
+    year: user.user_metadata?.year || "Year 3",
+    posting: user.user_metadata?.posting || "Internal Medicine"
+  };
+}
+
+async function requireUser(req, res, next) {
+  try {
+    supabaseConfig();
+    const cookies = parseCookies(req.headers.cookie);
+    let accessToken = cookies.clerkly_access;
+    let user = null;
+
+    if (accessToken) {
+      const { data } = await createPublicClient().auth.getUser(accessToken);
+      user = data.user;
+    }
+
+    if (!user && cookies.clerkly_refresh) {
+      const { data, error } = await createPublicClient().auth.refreshSession({ refresh_token: cookies.clerkly_refresh });
+      if (!error && data.session && data.user) {
+        accessToken = data.session.access_token;
+        user = data.user;
+        setSessionCookies(res, data.session);
+      }
+    }
+
+    if (!user || !accessToken) {
+      clearSessionCookies(res);
+      return res.status(401).json({ message: "Please sign in to continue." });
+    }
+
+    req.user = user;
+    req.supabase = createUserClient(accessToken);
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+function normalizeCase(body) {
+  const values = {};
+  CASE_FIELDS.forEach(field => { values[field] = String(body[field] ?? "").trim(); });
+  values.status = values.status === "Reviewed" ? "Reviewed" : "To review";
+  return values;
+}
+
+function validateCase(values) {
+  if (!values.title || !values.posting || !values.presentation || !values.learning) return "Please complete all required fields.";
+  if (values.patient_age && (!/^\d{1,3}$/.test(values.patient_age) || Number(values.patient_age) > 120)) return "Enter an age from 0 to 120 years.";
+  const text = CASE_FIELDS.map(field => values[field]).join(" ");
+  if (/\b(mrn|nric|passport|patient id|patient name|full name|date of birth|dob|home address|phone number|contact number)\b/i.test(text)) return "Remove possible patient identifiers before saving.";
+  return null;
+}
+
+async function uploadImage(client, userId, dataUrl) {
+  if (!dataUrl) return null;
+  const match = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl);
+  if (!match) throw new Error("Please upload a JPG, PNG or WebP image.");
+  const bytes = Buffer.from(match[2], "base64");
+  if (bytes.length > MAX_IMAGE_BYTES) throw new Error("Please choose an image smaller than 3 MB.");
+  const extension = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
+  const objectPath = `${userId}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await client.storage.from(IMAGE_BUCKET).upload(objectPath, bytes, { contentType: `image/${match[1].toLowerCase()}`, upsert: false });
+  if (error) throw new Error(`Image upload failed: ${error.message}`);
+  return objectPath;
+}
+
+async function addSignedImage(client, row) {
+  if (!row?.case_image_path) return { ...row, case_image: "" };
+  const { data, error } = await client.storage.from(IMAGE_BUCKET).createSignedUrl(row.case_image_path, 3600);
+  return { ...row, case_image: error ? "" : data.signedUrl };
+}
+
+app.post("/api/auth/signup", async (req, res, next) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    const displayName = String(req.body.displayName || "").trim();
+    if (!email || !displayName || password.length < 8) return res.status(400).json({ message: "Enter your name, email and a password of at least 8 characters." });
+    const { data, error } = await createPublicClient().auth.signUp({ email, password, options: { data: { display_name: displayName, year: "Year 3", posting: "Internal Medicine" } } });
+    if (error) return res.status(400).json({ message: error.message });
+    if (data.session) setSessionCookies(res, data.session);
+    res.status(201).json({ authenticated: Boolean(data.session), user: data.user ? safeUser(data.user) : null, message: data.session ? "Account created." : "Check your email to confirm your account, then sign in." });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/auth/login", async (req, res, next) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    if (!email || !password) return res.status(400).json({ message: "Enter your email and password." });
+    const { data, error } = await createPublicClient().auth.signInWithPassword({ email, password });
+    if (error || !data.session) return res.status(401).json({ message: error?.message || "Sign in failed." });
+    setSessionCookies(res, data.session);
+    res.json({ user: safeUser(data.user) });
+  } catch (error) { next(error); }
+});
+
+app.get("/api/auth/session", requireUser, (req, res) => res.json({ user: safeUser(req.user) }));
+
+app.post("/api/auth/logout", (req, res) => {
+  clearSessionCookies(res);
+  res.json({ message: "Signed out." });
+});
+
+app.get("/api/cases", requireUser, async (req, res, next) => {
+  try {
+    const { data, error } = await req.supabase.from("clinical_cases").select("*").order("created_at", { ascending: false });
+    if (error) throw error;
+    res.json(await Promise.all(data.map(row => addSignedImage(req.supabase, row))));
+  } catch (error) { next(error); }
+});
+
+app.get("/api/cases/:id", requireUser, async (req, res, next) => {
+  try {
+    const { data, error } = await req.supabase.from("clinical_cases").select("*").eq("id", req.params.id).single();
+    if (error || !data) return res.status(404).json({ message: "Case not found." });
+    res.json(await addSignedImage(req.supabase, data));
+  } catch (error) { next(error); }
+});
+
+app.post("/api/cases", requireUser, async (req, res, next) => {
+  let uploadedPath = null;
+  try {
+    const values = normalizeCase(req.body);
+    const validationError = validateCase(values);
+    if (validationError) return res.status(400).json({ message: validationError });
+    uploadedPath = await uploadImage(req.supabase, req.user.id, req.body.case_image);
+    const { data, error } = await req.supabase.from("clinical_cases").insert({ ...values, user_id: req.user.id, case_image_path: uploadedPath }).select("id").single();
+    if (error) throw error;
+    res.status(201).json({ id: data.id, message: "Case saved successfully." });
+  } catch (error) {
+    if (uploadedPath) await req.supabase.storage.from(IMAGE_BUCKET).remove([uploadedPath]);
+    next(error);
+  }
+});
+
+app.put("/api/cases/:id", requireUser, async (req, res, next) => {
+  let uploadedPath = null;
+  try {
+    const values = normalizeCase(req.body);
+    const validationError = validateCase(values);
+    if (validationError) return res.status(400).json({ message: validationError });
+    const { data: existing, error: findError } = await req.supabase.from("clinical_cases").select("case_image_path").eq("id", req.params.id).single();
+    if (findError || !existing) return res.status(404).json({ message: "Case not found." });
+    uploadedPath = await uploadImage(req.supabase, req.user.id, req.body.case_image);
+    const update = { ...values, updated_at: new Date().toISOString() };
+    if (uploadedPath) update.case_image_path = uploadedPath;
+    const { data, error } = await req.supabase.from("clinical_cases").update(update).eq("id", req.params.id).select("id").single();
+    if (error) throw error;
+    if (uploadedPath && existing.case_image_path) await req.supabase.storage.from(IMAGE_BUCKET).remove([existing.case_image_path]);
+    res.json({ id: data.id, message: "Case updated successfully." });
+  } catch (error) {
+    if (uploadedPath) await req.supabase.storage.from(IMAGE_BUCKET).remove([uploadedPath]);
+    next(error);
+  }
+});
+
+app.put("/api/cases/:id/status", requireUser, async (req, res, next) => {
+  try {
+    const status = req.body.status === "Reviewed" ? "Reviewed" : "To review";
+    const { data, error } = await req.supabase.from("clinical_cases").update({ status, updated_at: new Date().toISOString() }).eq("id", req.params.id).select("id").single();
+    if (error || !data) return res.status(404).json({ message: "Case not found." });
+    res.json({ message: "Status updated." });
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/cases/:id", requireUser, async (req, res, next) => {
+  try {
+    const { data: existing, error: findError } = await req.supabase.from("clinical_cases").select("case_image_path").eq("id", req.params.id).single();
+    if (findError || !existing) return res.status(404).json({ message: "Case not found." });
+    const { error } = await req.supabase.from("clinical_cases").delete().eq("id", req.params.id);
+    if (error) throw error;
+    if (existing.case_image_path) await req.supabase.storage.from(IMAGE_BUCKET).remove([existing.case_image_path]);
+    res.json({ message: "Case deleted." });
+  } catch (error) { next(error); }
+});
+
+function guidedAnswer(prompt, caseData) {
+  const name = caseData.title || "this case";
+  const text = prompt.toLowerCase();
+  const safety = "\n\nUse this for learning only. Reassess the real patient, follow local guidelines, and discuss decisions with your clinical supervisor.";
+  if (text.includes("quiz") || text.includes("question")) return `Question 1: What are three red flags in ${name} that require immediate escalation, and what would you do first?` + safety;
+  if (text.includes("clerk") || text.includes("history")) return `Clerk ${name} systematically:\n1. Anonymous context: age, gender and race only\n2. Chief complaint and HOPI using site, onset, character, radiation, associations, timing, aggravating/relieving factors and severity where relevant\n3. System review: general, cardiovascular, respiratory, gastrointestinal, genitourinary, neurological and musculoskeletal\n4. Past medical/surgical, drug, allergy, family and relevant social history\n5. Examination findings, provisional diagnosis and prioritized differentials\n6. Investigations and a supervisor-reviewed management plan` + safety;
+  if (text.includes("differential")) return `For ${name}, list the most likely diagnosis, dangerous alternatives and common mimics. For each one, add a supporting feature, a feature against it and the test or finding that would change your ranking.` + safety;
+  return `For ${name}, begin with a one-sentence problem representation: patient group, time course, syndrome, severity and key context. Then identify immediate threats before planning focused investigations and management.` + safety;
+}
+
+app.post("/api/assistant", requireUser, async (req, res) => {
+  const prompt = String(req.body.prompt || "").trim().slice(0, 4000);
+  const caseData = req.body.caseData || {};
+  if (!prompt) return res.status(400).json({ message: "Please enter a question." });
+  if (!gemini) return res.json({ answer: guidedAnswer(prompt, caseData), mode: "guided" });
+  try {
+    const response = await gemini.models.generateContent({ model: "gemini-2.5-flash", contents: `You are a clinical education tutor for a third-year medical student. Never replace clinical supervision, prescribe independently, or claim certainty. Protect patient privacy. Use clear structured teaching and flag emergencies.\n\nAnonymous case: ${JSON.stringify(caseData).slice(0, 12000)}\n\nStudent request: ${prompt}` });
+    res.json({ answer: response.text, mode: "ai" });
+  } catch { res.json({ answer: guidedAnswer(prompt, caseData), mode: "guided" }); }
+});
+
+app.get("/", (_req, res) => res.redirect("/index.html"));
+
+app.get("/api/health", (_req, res) => {
+  try {
+    supabaseConfig();
+    res.json({ message: "Clerkly API is ready.", database: "configured" });
+  } catch {
+    res.status(503).json({ message: "Clerkly API is running, but Supabase is not configured." });
+  }
+});
+
+app.use((error, _req, res, _next) => {
+  console.error(error.message);
+  res.status(500).json({ message: isProduction ? "Something went wrong. Please try again." : error.message });
+});
+
+if (require.main === module) {
+  app.listen(PORT, () => console.log(`Clerkly is running at http://localhost:${PORT}`));
+}
+
+module.exports = app;

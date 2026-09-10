@@ -1,98 +1,48 @@
-# vinext-starter
+# Clerkly
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Clerkly is an anonymous clinical learning casebook for medical students. It uses plain HTML/CSS/JavaScript for the interface, Express for the API, Supabase for accounts/database/private image storage, and is ready for Vercel.
 
-## Prerequisites
+## Which file controls what?
 
-- Node.js `>=22.13.0`
+```text
+public/
+├── login.html       → Supabase email sign-up and sign-in page
+├── index.html       → Dashboard after sign-in
+├── cases.html       → Casebook details, edit and delete actions
+├── add-case.html    → Structured clerking form for adding/updating a case
+├── library.html     → Clinical learning reference page
+├── progress.html    → Learning statistics and review queue
+├── Style.css        → Appearance of every page
+└── main.js          → Browser interactions and API calls
 
-## Quick Start
-
-```bash
-npm install
-npm run dev
-npm run build
+server.js            → Express authentication, cases, images and AI API
+db.js                → Creates authenticated Supabase clients
+supabase/migrations/
+└── 001_clerkly_schema.sql → Database, RLS and private Storage setup
+.env.example         → Safe example of required environment variables
+package.json         → Packages and start commands
+DEPLOYMENT.md        → GitHub, Supabase and Vercel walkthrough
 ```
 
-This starter does not use `wrangler.jsonc`.
+## Local setup
 
-## Included Shape
+1. Create a Supabase project.
+2. Run `supabase/migrations/001_clerkly_schema.sql` in its SQL Editor.
+3. Copy `.env.example` to `.env` and enter your Supabase Project URL and publishable key.
+4. Optionally add `GEMINI_API_KEY` for flexible AI responses.
+5. Run `npm install`.
+6. Run `npm run dev`.
+7. Open `http://localhost:3000`.
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the complete beginner-friendly deployment process.
 
-## Workspace Auth Headers
+## Security and patient privacy
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+- Every API route for cases requires a Supabase account session.
+- Authentication tokens are kept in HTTP-only, same-site cookies.
+- Database Row Level Security limits users to their own cases.
+- Case images use a private Storage bucket and expiring signed links.
+- The server rejects several common direct-identifier labels.
+- Never store patient names, registration numbers, dates of birth, addresses, contact details, exact dates or identifiable photographs.
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Clerkly is a learning notebook, not an electronic health record or a substitute for clinical supervision.

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Clerkly — Add Case</title>
+  <link rel="stylesheet" href="Style.css">
+</head>
+<body class="portal-body">
+  <aside class="portal-sidebar">
+    <a class="portal-brand" href="index.html"><span class="logo-mark">C</span><span>clerkly<span class="logo-dot">.</span></span></a>
+    <nav><a href="index.html"><span>⌂</span>Home</a><a href="cases.html"><span>▤</span>My cases</a><a class="active" href="add-case.html"><span>＋</span>Add case</a><a href="library.html"><span>⌘</span>Library</a><a href="progress.html"><span>↗</span>Progress</a><button onclick="document.getElementById('chatFab').click()"><span>✦</span>AI study copilot</button></nav>
+    <button class="portal-logout" onclick="Auth.logout()"><span>↪</span>Logout</button>
+    <div class="sidebar-privacy"><strong>Keep every case anonymous.</strong><span>No patient names, IDs or identifiable photographs.</span></div>
+  </aside>
+
+  <main class="portal-main portal-page-main">
+    <header class="portal-top">
+      <div><p class="portal-breadcrumb">Clerkly / Cases / <strong id="formBreadcrumb">Add case</strong></p><h1 id="casePageTitle">Record a clinical case</h1></div>
+      <div class="portal-top-actions"><a class="secondary-button" href="cases.html">← Back to casebook</a><span class="avatar">AZ</span></div>
+    </header>
+
+    <section class="portal-notice compact-notice"><span>PRIVACY</span><div><strong>Only age, gender and race are collected as patient details.</strong><p>Never enter a name, MRN, NRIC, date of birth, address, contact details, exact admission dates or a recognizable patient photograph.</p></div></section>
+
+    <section class="portal-form-shell clerking-form-shell">
+      <header><span>▤</span><div><h2 id="caseFormTitle">New clerking entry</h2><p id="caseFormSubtitle">Follow the sections in order and record only information relevant to your learning.</p></div></header>
+
+      <form class="form-grid portal-form clerking-form" id="caseForm">
+        <fieldset class="form-section">
+          <legend><span>1</span><span class="legend-copy">Case and anonymous patient details<small>Do not add any direct identifier.</small></span></legend>
+          <div class="section-fields two-fields">
+            <label class="form-field">Case title<input name="title" required placeholder="e.g. Community-acquired pneumonia"></label>
+            <label class="form-field">Posting<select name="posting" required><option>Internal Medicine</option><option>Surgery</option><option>Paediatrics</option><option>O&amp;G</option><option>Emergency</option><option>Primary Care</option></select></label>
+          </div>
+          <div class="section-fields three-fields">
+            <label class="form-field">Age<input name="patient_age" inputmode="numeric" type="number" min="0" max="120" placeholder="Years"></label>
+            <label class="form-field">Gender<select name="patient_gender"><option value="">Not recorded</option><option>Female</option><option>Male</option><option>Other</option></select></label>
+            <label class="form-field">Race<input name="patient_race" maxlength="100" placeholder="If clinically relevant"></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend><span>2</span><span class="legend-copy">Presenting complaint and HOPI<small>Build a clear timeline in the patient’s own terms.</small></span></legend>
+          <div class="section-fields">
+            <label class="form-field">Chief complaint<input name="chief_complaint" placeholder="Main symptom and duration"></label>
+            <label class="form-field">History of presenting illness<textarea name="presentation" rows="7" required placeholder="Describe the chronology and relevant positive and negative symptoms."></textarea></label>
+            <div class="clerking-guide"><strong>Symptom guide</strong><span>Site</span><span>Onset</span><span>Character</span><span>Radiation</span><span>Associations</span><span>Timing</span><span>Aggravating / relieving factors</span><span>Severity</span></div>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend><span>3</span><span class="legend-copy">Systemic review<small>Record relevant positives and important negatives.</small></span></legend>
+          <div class="system-review-guide"><span><b>General</b> fever, lethargy, appetite, weight</span><span><b>CVS</b> chest pain, palpitations, edema</span><span><b>Respiratory</b> cough, dyspnoea, wheeze</span><span><b>GIT</b> vomiting, diarrhoea, bowel change</span><span><b>Genitourinary</b> dysuria, frequency, haematuria</span><span><b>CNS</b> headache, dizziness, fits, weakness</span><span><b>Musculoskeletal</b> pain, weakness, swelling</span></div>
+          <div class="section-fields"><label class="form-field">System review notes<textarea name="systemic_review" rows="7" placeholder="General: …&#10;CVS: …&#10;Respiratory: …&#10;GIT: …&#10;Genitourinary: …&#10;CNS: …&#10;Musculoskeletal: …"></textarea></label></div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend><span>4</span><span class="legend-copy">Background histories<small>Keep social details relevant and non-identifying.</small></span></legend>
+          <div class="section-fields two-fields">
+            <label class="form-field">Past medical history<textarea name="past_medical_history" rows="4" placeholder="Conditions, admissions and relevant follow-up"></textarea></label>
+            <label class="form-field">Past surgical history<textarea name="past_surgical_history" rows="4" placeholder="Operations, procedures and relevant complications"></textarea></label>
+            <label class="form-field">Drug history<textarea name="drug_history" rows="4" placeholder="Medicines, adherence and relevant supplements"></textarea></label>
+            <label class="form-field">Allergy history<textarea name="allergy_history" rows="4" placeholder="Substance and reaction"></textarea></label>
+            <label class="form-field">Family history<textarea name="family_history" rows="4" placeholder="Relevant familial conditions or similar illness"></textarea></label>
+            <label class="form-field">Social history<textarea name="social_history" rows="4" placeholder="Smoking, alcohol, travel, exposure and functional context only"></textarea></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend><span>5</span><span class="legend-copy">Assessment and plan<small>Confirm clinical decisions with your supervisor and local guidelines.</small></span></legend>
+          <div class="section-fields two-fields">
+            <label class="form-field">Key examination findings<textarea name="findings" rows="5" placeholder="Observations, general and focused examination"></textarea></label>
+            <label class="form-field">Provisional diagnosis<textarea name="provisional_diagnosis" rows="5" placeholder="Leading diagnosis and supporting features"></textarea></label>
+            <label class="form-field">Differential diagnoses<textarea name="differential_diagnoses" rows="5" placeholder="Prioritized alternatives and reasons"></textarea></label>
+            <label class="form-field">Investigations<textarea name="investigations" rows="5" placeholder="Available results and investigations to consider"></textarea></label>
+            <label class="form-field full-field">Management / treatment plan<textarea name="management_plan" rows="5" placeholder="Immediate priorities and supervisor-reviewed plan"></textarea></label>
+          </div>
+        </fieldset>
+
+        <fieldset class="form-section">
+          <legend><span>6</span><span class="legend-copy">Personal learning record<small>Add your own learning without identifying the patient.</small></span></legend>
+          <div class="section-fields two-fields">
+            <label class="form-field full-field">Notes or useful snippets<textarea name="notes_snippets" rows="5" placeholder="Your own notes or a short learning extract. Include its source when relevant."></textarea></label>
+            <label class="form-field full-field image-field">Learning image<input id="caseImageInput" type="file" accept="image/jpeg,image/png,image/webp"><span class="form-help">Optional. JPG, PNG or WebP, maximum 3 MB. Never upload an identifiable patient image.</span><img id="imagePreview" class="image-preview hidden" alt="Selected image preview"></label>
+            <input type="hidden" name="case_image" id="caseImageData">
+            <label class="form-field full-field">What I learnt<textarea name="learning" rows="5" required placeholder="Your main takeaway, uncertainty or knowledge gap"></textarea></label>
+            <label class="form-field">Tags<input name="tags" placeholder="Respiratory, Infection"><span class="form-help">Separate tags with commas.</span></label>
+            <label class="form-field">Review status<select name="status"><option>To review</option><option>Reviewed</option></select></label>
+          </div>
+        </fieldset>
+
+        <div class="form-actions sticky-form-actions"><a class="secondary-button" href="cases.html">Cancel</a><button class="primary-button" id="caseSubmitButton" type="submit">Save case</button></div>
+      </form>
+    </section>
+    <div class="notice" id="formNotice"></div>
+  </main>
+  <script src="main.js"></script>
+</body>
+</html>
