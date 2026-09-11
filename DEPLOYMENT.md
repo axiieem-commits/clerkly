@@ -37,6 +37,7 @@ PORT=3000
 SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 SUPABASE_PUBLISHABLE_KEY=sb_publishable_YOUR_KEY
 GEMINI_API_KEY=
+APP_URL=http://localhost:3000
 ```
 
 The Gemini key is optional. Leave its value empty if you do not have one.
@@ -83,6 +84,7 @@ Before pushing, confirm `.env` is not listed by `git status`. It is intentionall
 6. Expand **Environment Variables** and add:
    - `SUPABASE_URL`
    - `SUPABASE_PUBLISHABLE_KEY`
+   - `APP_URL` using your final Vercel address, such as `https://clerkly-example.vercel.app`
    - `GEMINI_API_KEY` only if you use Gemini
 7. Apply the Supabase variables to Production and Preview deployments.
 8. Select **Deploy**.
@@ -98,7 +100,9 @@ After Vercel gives you the final address:
 3. Set **Site URL** to your Vercel address, for example `https://clerkly-example.vercel.app`.
 4. Add these **Redirect URLs**:
    - `https://clerkly-example.vercel.app/login.html`
+   - `https://clerkly-example.vercel.app/reset-password.html`
    - `http://localhost:3000/login.html`
+   - `http://localhost:3000/reset-password.html`
 5. Save the settings.
 
 When a new user confirms their email, they can return to the login page and sign in.
@@ -111,10 +115,11 @@ Test the deployed website in a private/incognito browser window:
 2. Sign in and create an anonymous case.
 3. Upload a non-identifiable learning image and confirm that the page compresses it before saving.
 4. Open Profile, update your student details and upload a profile picture.
-5. Edit the case and save more information.
-6. Mark it reviewed and then delete it.
-7. Sign out and confirm that protected pages return to the login page.
-8. Open `https://YOUR-VERCEL-ADDRESS/api/health`; it should report that the database is configured.
+5. Sign out, use **Forgot password?**, and test the emailed recovery link.
+6. Edit the case, print its clerking sheet and confirm the patient name is a blank handwritten line.
+7. Mark it reviewed and then delete it.
+8. Sign out and confirm that protected pages return to the login page.
+9. Open `https://YOUR-VERCEL-ADDRESS/api/health`; it should report that the database is configured.
 
 Each later push to the `main` branch automatically creates a new Vercel production deployment. Other branches and pull requests receive preview deployments.
 

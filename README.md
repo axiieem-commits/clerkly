@@ -7,6 +7,7 @@ Clerkly is an anonymous clinical learning casebook for medical students. It uses
 ```text
 public/
 ├── login.html       → Supabase email sign-up and sign-in page
+├── reset-password.html → Password recovery page opened from Supabase email
 ├── index.html       → Dashboard after sign-in
 ├── cases.html       → Casebook details, edit and delete actions
 ├── add-case.html    → Structured clerking form for adding/updating a case
@@ -42,10 +43,11 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for the complete beginner-friendly deployment
 ## Security and patient privacy
 
 - Every API route for cases requires a Supabase account session.
-- Authentication tokens are kept in HTTP-only, same-site cookies.
+- Authentication tokens are kept in HTTP-only, same-site cookies. “Remember me” keeps them for up to 20 days; otherwise they are browser-session cookies.
 - Database Row Level Security limits users to their own cases.
 - Case and profile images are compressed in the browser, then stored in private buckets with expiring signed links.
 - The server rejects several common direct-identifier labels.
+- Printed clerking sheets contain a blank name line for handwriting only; Clerkly never collects or stores that name.
 - Never store patient names, registration numbers, dates of birth, addresses, contact details, exact dates or identifiable photographs.
 
 Clerkly is a learning notebook, not an electronic health record or a substitute for clinical supervision.

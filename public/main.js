@@ -51,6 +51,8 @@ const Auth = {
     const displayName = document.getElementById("loginDisplayName");
     const submitButton = document.getElementById("loginSubmit");
     const toggleButton = document.getElementById("loginModeToggle");
+    const rememberRow = document.getElementById("rememberRow");
+    const forgotButton = document.getElementById("forgotPassword");
     const message = document.getElementById("loginMessage");
 
     toggleButton.addEventListener("click", () => {
@@ -58,12 +60,38 @@ const Auth = {
       modeTitle.textContent = signupMode ? "Create your account" : "Welcome back";
       modeHelp.textContent = signupMode ? "Use an email you can access for account confirmation." : "Sign in securely to access your casebook.";
       displayNameField.classList.toggle("hidden", !signupMode);
+      rememberRow.classList.toggle("hidden", signupMode);
       displayName.required = signupMode;
       document.getElementById("loginPassword").autocomplete = signupMode ? "new-password" : "current-password";
       submitButton.textContent = signupMode ? "Create account →" : "Sign in →";
       toggleButton.textContent = signupMode ? "Already have an account? Sign in" : "New to Clerkly? Create an account";
       message.textContent = "";
       message.classList.remove("success");
+    });
+
+    forgotButton.addEventListener("click", async () => {
+      const email = document.getElementById("loginEmail").value.trim();
+      if (!email) {
+        message.classList.remove("success");
+        message.textContent = "Enter your email address first, then select Forgot password.";
+        document.getElementById("loginEmail").focus();
+        return;
+      }
+      forgotButton.disabled = true;
+      forgotButton.textContent = "Sending…";
+      try {
+        const response = await fetch("/api/auth/forgot-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message);
+        message.classList.add("success");
+        message.textContent = data.message;
+      } catch (error) {
+        message.classList.remove("success");
+        message.textContent = error.message || "Could not send the recovery email.";
+      } finally {
+        forgotButton.disabled = false;
+        forgotButton.textContent = "Forgot password?";
+      }
     });
 
     form.addEventListener("submit", async event => {
@@ -76,7 +104,7 @@ const Auth = {
         const response = await fetch(signupMode ? "/api/auth/signup" : "/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, displayName: displayName.value.trim() })
+          body: JSON.stringify({ email, password, displayName: displayName.value.trim(), rememberMe: !signupMode && document.getElementById("rememberMe").checked })
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.message);
@@ -93,6 +121,46 @@ const Auth = {
       } finally {
         submitButton.disabled = false;
         submitButton.textContent = signupMode ? "Create account →" : "Sign in →";
+      }
+    });
+    return true;
+  },
+
+  initPasswordReset() {
+    const form = document.getElementById("resetPasswordForm");
+    if (!form) return false;
+    const params = new URLSearchParams(location.hash.slice(1));
+    const accessToken = params.get("access_token");
+    const refreshToken = params.get("refresh_token");
+    const message = document.getElementById("resetMessage");
+    const button = document.getElementById("resetSubmit");
+    history.replaceState(null, "", location.pathname);
+    if (!accessToken || !refreshToken) {
+      message.textContent = params.get("error_description") || "This recovery link is invalid or has expired. Request a new link from the sign-in page.";
+      button.disabled = true;
+    }
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      const password = document.getElementById("newPassword").value;
+      const confirmation = document.getElementById("confirmPassword").value;
+      if (password !== confirmation) {
+        message.textContent = "The two passwords do not match.";
+        return;
+      }
+      button.disabled = true;
+      button.textContent = "Updating…";
+      try {
+        const response = await fetch("/api/auth/reset-password", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accessToken, refreshToken, password }) });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message);
+        message.classList.add("success");
+        message.textContent = data.message;
+        setTimeout(() => location.replace("login.html"), 1200);
+      } catch (error) {
+        message.classList.remove("success");
+        message.textContent = error.message || "Could not update your password.";
+        button.disabled = false;
+        button.textContent = "Update password →";
       }
     });
     return true;
@@ -145,6 +213,7 @@ const Clerkly = {
     document.getElementById("caseSearch").addEventListener("input", Clerkly.renderCaseList);
     document.getElementById("deleteCase").addEventListener("click", Clerkly.deleteSelected);
     document.getElementById("reviewCase").addEventListener("click", Clerkly.markReviewed);
+    document.getElementById("printCase").addEventListener("click", () => { if (Clerkly.selected) window.print(); });
   },
 
   renderCaseList() {
@@ -200,6 +269,8 @@ const Clerkly = {
     const editLink = document.getElementById("editCase");
     editLink.classList.remove("hidden");
     editLink.href = `add-case.html?edit=${encodeURIComponent(item.id)}`;
+    document.getElementById("printCase").classList.remove("hidden");
+    Clerkly.preparePrintSheet(item);
     Clerkly.updateAssistantContext();
   },
 
@@ -211,6 +282,30 @@ const Clerkly = {
     document.getElementById("editCase").classList.add("hidden");
     document.getElementById("reviewCase").classList.add("hidden");
     document.getElementById("deleteCase").classList.add("hidden");
+    document.getElementById("printCase").classList.add("hidden");
+  },
+
+  preparePrintSheet(item) {
+    const values = {
+      printWard: item.posting,
+      printAge: item.patient_age,
+      printGender: item.patient_gender,
+      printRace: item.patient_race,
+      printComplaint: item.chief_complaint,
+      printPresentation: item.presentation,
+      printSystemicReview: item.systemic_review,
+      printPmh: item.past_medical_history,
+      printPsh: item.past_surgical_history,
+      printDrug: item.drug_history,
+      printAllergy: item.allergy_history,
+      printFamily: item.family_history,
+      printSocial: item.social_history,
+      printProvisional: item.provisional_diagnosis,
+      printDifferentials: item.differential_diagnoses,
+      printInvestigations: item.investigations,
+      printManagement: item.management_plan
+    };
+    Object.entries(values).forEach(([id, value]) => { document.getElementById(id).textContent = value || ""; });
   },
 
   async markReviewed() {
@@ -300,6 +395,7 @@ const Clerkly = {
         const preview = document.getElementById(targets.previewId);
         preview.src = reader.result;
         preview.classList.remove("hidden");
+        if (targets.previewId === "profilePhotoImage") document.getElementById("profilePhotoInitials")?.classList.add("hidden");
         if (help) help.textContent = `Ready to upload · ${(compressed.size / 1024).toFixed(0)} KB after compression.`;
       };
       reader.readAsDataURL(compressed);
@@ -403,6 +499,7 @@ const Clerkly = {
     document.getElementById("profileCardName").textContent = name;
     document.getElementById("profileCardUsername").textContent = `@${profile.username || "student"}`;
     document.getElementById("profilePhotoInitials").textContent = Clerkly.initials(name);
+    document.getElementById("profilePhotoInitials").classList.toggle("hidden", Boolean(profile.avatarUrl));
     if (profile.avatarUrl) {
       const image = document.getElementById("profilePhotoImage");
       image.src = profile.avatarUrl;
@@ -514,6 +611,7 @@ window.Auth = Auth;
 window.Clerkly = Clerkly;
 
 document.addEventListener("DOMContentLoaded", async () => {
+  if (Auth.initPasswordReset()) return;
   if (Auth.initLogin()) return;
   if (!await Auth.guard()) return;
   Clerkly.initCasebook();

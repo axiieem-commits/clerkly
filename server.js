@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 3000;
 const IMAGE_BUCKET = "case-images";
 const PROFILE_IMAGE_BUCKET = "profile-images";
 const MAX_IMAGE_BYTES = 1024 * 1024;
+const REMEMBER_DURATION_MS = 20 * 24 * 60 * 60 * 1000;
 const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
 const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
@@ -28,18 +29,32 @@ const CASE_FIELDS = [
 ];
 
 function cookieOptions(maxAge) {
-  return { httpOnly: true, secure: isProduction, sameSite: "lax", path: "/", maxAge };
+  return { httpOnly: true, secure: isProduction, sameSite: "lax", path: "/", ...(Number.isFinite(maxAge) ? { maxAge } : {}) };
 }
 
-function setSessionCookies(res, session) {
-  res.cookie("clerkly_access", session.access_token, cookieOptions((session.expires_in || 3600) * 1000));
-  res.cookie("clerkly_refresh", session.refresh_token, cookieOptions(30 * 24 * 60 * 60 * 1000));
+function setSessionCookies(res, session, rememberUntil = null) {
+  const remaining = rememberUntil ? Math.max(0, rememberUntil - Date.now()) : null;
+  const accessAge = remaining === null ? null : Math.min((session.expires_in || 3600) * 1000, remaining);
+  res.cookie("clerkly_access", session.access_token, cookieOptions(accessAge));
+  res.cookie("clerkly_refresh", session.refresh_token, cookieOptions(remaining));
+  if (remaining !== null) res.cookie("clerkly_remember_until", String(rememberUntil), cookieOptions(remaining));
+  else res.clearCookie("clerkly_remember_until", cookieOptions());
 }
 
 function clearSessionCookies(res) {
   const options = { httpOnly: true, secure: isProduction, sameSite: "lax", path: "/" };
   res.clearCookie("clerkly_access", options);
   res.clearCookie("clerkly_refresh", options);
+  res.clearCookie("clerkly_remember_until", options);
+}
+
+function publicOrigin(req) {
+  const configured = String(process.env.APP_URL || "").trim().replace(/\/$/, "");
+  if (configured) return configured;
+  const vercelHost = process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (vercelHost) return `https://${vercelHost}`;
+  const protocol = req.get("x-forwarded-proto") || req.protocol;
+  return `${protocol}://${req.get("host")}`;
 }
 
 function parseCookies(header = "") {
@@ -89,11 +104,16 @@ async function requireUser(req, res, next) {
     }
 
     if (!user && cookies.clerkly_refresh) {
+      const rememberUntil = Number(cookies.clerkly_remember_until) || null;
+      if (rememberUntil && rememberUntil <= Date.now()) {
+        clearSessionCookies(res);
+        return res.status(401).json({ message: "Your remembered login has expired. Please sign in again." });
+      }
       const { data, error } = await createPublicClient().auth.refreshSession({ refresh_token: cookies.clerkly_refresh });
       if (!error && data.session && data.user) {
         accessToken = data.session.access_token;
         user = data.user;
-        setSessionCookies(res, data.session);
+        setSessionCookies(res, data.session, rememberUntil);
       }
     }
 
@@ -164,8 +184,37 @@ app.post("/api/auth/login", async (req, res, next) => {
     if (!email || !password) return res.status(400).json({ message: "Enter your email and password." });
     const { data, error } = await createPublicClient().auth.signInWithPassword({ email, password });
     if (error || !data.session) return res.status(401).json({ message: error?.message || "Sign in failed." });
-    setSessionCookies(res, data.session);
+    const rememberUntil = req.body.rememberMe === true ? Date.now() + REMEMBER_DURATION_MS : null;
+    setSessionCookies(res, data.session, rememberUntil);
     res.json({ user: safeUser(data.user) });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/auth/forgot-password", async (req, res, next) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ message: "Enter your email address." });
+    const redirectTo = `${publicOrigin(req)}/reset-password.html`;
+    const { error } = await createPublicClient().auth.resetPasswordForEmail(email, { redirectTo });
+    if (error) return res.status(400).json({ message: error.message });
+    res.json({ message: "If an account exists for that email, a password reset link has been sent." });
+  } catch (error) { next(error); }
+});
+
+app.post("/api/auth/reset-password", async (req, res, next) => {
+  try {
+    const accessToken = String(req.body.accessToken || "");
+    const refreshToken = String(req.body.refreshToken || "");
+    const password = String(req.body.password || "");
+    if (!accessToken || !refreshToken || password.length < 8) return res.status(400).json({ message: "Use a valid recovery link and a password of at least 8 characters." });
+    const client = createPublicClient();
+    const { error: sessionError } = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+    if (sessionError) return res.status(400).json({ message: "This recovery link is invalid or has expired." });
+    const { error } = await client.auth.updateUser({ password });
+    if (error) return res.status(400).json({ message: error.message });
+    await client.auth.signOut();
+    clearSessionCookies(res);
+    res.json({ message: "Password updated. Returning to sign in…" });
   } catch (error) { next(error); }
 });
 
