@@ -26,15 +26,23 @@ const Auth = {
 
   async guard() {
     try {
-      const response = await fetch("/api/auth/session");
-      if (!response.ok) throw new Error();
+      const response = await fetch("/api/auth/session", { cache: "no-store", credentials: "same-origin" });
+      if (response.status === 401) {
+        localStorage.removeItem("clerkly_user");
+        location.replace("login.html");
+        return false;
+      }
+      if (!response.ok) throw new Error("The server could not verify your session.");
       const data = await response.json();
       Auth.currentUser = data.user;
       localStorage.setItem("clerkly_user", JSON.stringify(data.user));
       return true;
-    } catch {
-      localStorage.removeItem("clerkly_user");
-      location.replace("login.html");
+    } catch (error) {
+      const main = document.querySelector(".portal-main");
+      if (main && !document.getElementById("sessionError")) {
+        main.insertAdjacentHTML("afterbegin", '<section class="portal-notice compact-notice session-error" id="sessionError"><span>CONNECTION</span><div><strong>Your login could not be checked.</strong><p>Please refresh the page. You have not been signed out.</p></div></section>');
+      }
+      console.error(error.message);
       return false;
     }
   },

@@ -18,6 +18,10 @@ const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
 app.disable("x-powered-by");
 app.use(express.json({ limit: "5mb" }));
 app.use(express.urlencoded({ extended: true, limit: "5mb" }));
+app.use("/api", (_req, res, next) => {
+  res.set("Cache-Control", "no-store, private");
+  next();
+});
 app.use(express.static(path.join(__dirname, "public")));
 
 const CASE_FIELDS = [
@@ -82,7 +86,10 @@ function safeUser(user, profile = {}) {
 
 async function profileForUser(client, user) {
   const { data, error } = await client.from("profiles").select("*").eq("user_id", user.id).maybeSingle();
-  if (error && !["42P01", "PGRST205"].includes(error.code)) throw error;
+  if (error) {
+    console.warn(`Profile lookup skipped: ${error.code || "unknown error"}`);
+    return safeUser(user);
+  }
   let avatarUrl = "";
   if (data?.avatar_path) {
     const { data: signed } = await client.storage.from(PROFILE_IMAGE_BUCKET).createSignedUrl(data.avatar_path, 3600);
