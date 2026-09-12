@@ -221,7 +221,7 @@ const Clerkly = {
     document.getElementById("caseSearch").addEventListener("input", Clerkly.renderCaseList);
     document.getElementById("deleteCase").addEventListener("click", Clerkly.deleteSelected);
     document.getElementById("reviewCase").addEventListener("click", Clerkly.markReviewed);
-    document.getElementById("printCase").addEventListener("click", () => { if (Clerkly.selected) window.print(); });
+    document.getElementById("printCase").addEventListener("click", Clerkly.printSelectedCase);
   },
 
   renderCaseList() {
@@ -314,6 +314,22 @@ const Clerkly = {
       printManagement: item.management_plan
     };
     Object.entries(values).forEach(([id, value]) => { document.getElementById(id).textContent = value || ""; });
+    document.querySelectorAll("[data-print-system], [data-print-problem]").forEach(element => element.classList.remove("print-selected"));
+    const selectedSystem = Array.from(document.querySelectorAll("[data-print-system]")).find(element => element.dataset.printSystem === item.main_system);
+    selectedSystem?.classList.add("print-selected");
+    if (selectedSystem && item.system_problem) {
+      const selectedProblem = Array.from(selectedSystem.closest("p").querySelectorAll("[data-print-problem]")).find(element => element.dataset.printProblem === item.system_problem);
+      selectedProblem?.classList.add("print-selected");
+    }
+  },
+
+  printSelectedCase() {
+    if (!Clerkly.selected) return;
+    const originalTitle = document.title;
+    const safeTitle = String(Clerkly.selected.title || "Clinical case").replace(/[\\/:*?"<>|]/g, "-");
+    document.title = `Clerkly - ${safeTitle} - Clerking Sheet`;
+    window.addEventListener("afterprint", () => { document.title = originalTitle; }, { once: true });
+    window.print();
   },
 
   async markReviewed() {
