@@ -224,6 +224,7 @@ const Clerkly = {
     document.getElementById("deleteCase").addEventListener("click", Clerkly.deleteSelected);
     document.getElementById("reviewCase").addEventListener("click", Clerkly.markReviewed);
     document.getElementById("printCase").addEventListener("click", Clerkly.printSelectedCase);
+    window.addEventListener("beforeprint", Clerkly.fitPrintSheet);
   },
 
   renderCaseList() {
@@ -300,6 +301,14 @@ const Clerkly = {
   preparePrintSheet(item) {
     const numberedLines = value => String(value || "").split(/\n+/).map(line => line.trim()).filter(Boolean).map((line, index) => /^\d+[.)]\s/.test(line) ? line : `${index + 1}. ${line}`).join("\n");
     const identifiers = Clerkly.getPrintIdentifiers(item.id);
+    const printSheet = document.getElementById("printSheet");
+    const printableText = [item.presentation, item.hopi_site, item.hopi_onset, item.hopi_character, item.hopi_radiation, item.hopi_associations, item.hopi_timing, item.hopi_aggravating_relief, item.hopi_severity, item.systemic_review, item.past_medical_history, item.past_surgical_history, item.differential_diagnoses, item.investigations, item.management_plan].join(" ");
+    const summaryLength = String(item.presentation || "").length;
+    const estimatedSummaryLines = Math.max(3, Math.ceil(summaryLength / 58));
+    printSheet.style.setProperty("--hopi-summary-height", `${Math.min(26, estimatedSummaryLines * 3.2)}mm`);
+    printSheet.style.removeProperty("--print-font-size");
+    printSheet.classList.toggle("print-density-compact", printableText.length > 1800 || summaryLength > 360);
+    printSheet.classList.toggle("print-density-tight", printableText.length > 3000 || summaryLength > 650);
     const values = {
       printWard: item.ward || item.posting,
       printPatientName: identifiers.name,
@@ -363,6 +372,19 @@ const Clerkly = {
       document.getElementById("printMrn").textContent = "";
     }, { once: true });
     window.print();
+  },
+
+  fitPrintSheet() {
+    const sheet = document.getElementById("printSheet");
+    if (!sheet) return;
+    let fontSize = sheet.classList.contains("print-density-tight") ? 6.25 : sheet.classList.contains("print-density-compact") ? 7 : 7.8;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      sheet.style.setProperty("--print-font-size", `${fontSize}pt`);
+      void sheet.offsetHeight;
+      const overflowing = Array.from(sheet.querySelectorAll(".print-panel")).some(panel => panel.scrollHeight > panel.clientHeight + 1 || panel.scrollWidth > panel.clientWidth + 1);
+      if (!overflowing || fontSize <= 5.5) break;
+      fontSize -= 0.25;
+    }
   },
 
   getPrintIdentifiers(caseId) {
