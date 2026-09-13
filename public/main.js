@@ -184,6 +184,7 @@ const Auth = {
 const Clerkly = {
   cases: [],
   selected: null,
+  libraryCompareIds: new Set(),
 
   async getCases() {
     try {
@@ -596,6 +597,126 @@ const Clerkly = {
     }
   },
 
+  libraryWords(value) {
+    const ignored = new Set(["a", "an", "the", "case", "patient", "with", "without", "of", "and", "acute", "chronic", "suspected", "possible", "probable", "severe"]);
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(word => word.length > 2 && !ignored.has(word));
+  },
+
+  libraryCasesAreSimilar(first, second) {
+    const firstTitle = Clerkly.libraryWords(first.title);
+    const secondTitle = Clerkly.libraryWords(second.title);
+    const titleOverlap = firstTitle.filter(word => secondTitle.includes(word));
+    const firstTags = String(first.tags || "").toLowerCase().split(",").map(tag => tag.trim()).filter(Boolean);
+    const secondTags = String(second.tags || "").toLowerCase().split(",").map(tag => tag.trim()).filter(Boolean);
+    const sharedTag = firstTags.some(tag => secondTags.includes(tag));
+    return sharedTag || titleOverlap.length >= Math.max(1, Math.ceil(Math.min(firstTitle.length, secondTitle.length) / 2));
+  },
+
+  groupLibraryCases(cases) {
+    const groups = [];
+    cases.forEach(item => {
+      const group = groups.find(candidate => candidate.items.some(existing => Clerkly.libraryCasesAreSimilar(item, existing)));
+      if (group) group.items.push(item);
+      else groups.push({ title: item.title || "Untitled topic", items: [item] });
+    });
+    groups.forEach(group => {
+      group.title = [...group.items].sort((a, b) => String(a.title).length - String(b.title).length)[0].title;
+    });
+    return groups;
+  },
+
+  async initLibrary() {
+    const container = document.getElementById("libraryGroups");
+    if (!container) return;
+    Clerkly.cases = await Clerkly.getCases();
+    const postings = [...new Set(Clerkly.cases.map(item => item.posting).filter(Boolean))].sort();
+    document.getElementById("libraryPostingFilter").insertAdjacentHTML("beforeend", postings.map(posting => `<option>${Clerkly.escape(posting)}</option>`).join(""));
+    const groups = Clerkly.groupLibraryCases(Clerkly.cases);
+    document.getElementById("libraryCaseCount").textContent = Clerkly.cases.length;
+    document.getElementById("libraryTopicCount").textContent = groups.length;
+    document.getElementById("libraryImageCount").textContent = Clerkly.cases.filter(item => item.case_image).length;
+    document.getElementById("librarySearch").addEventListener("input", Clerkly.renderLibrary);
+    document.getElementById("libraryPostingFilter").addEventListener("change", Clerkly.renderLibrary);
+    document.getElementById("clearLibraryFilters").addEventListener("click", () => {
+      document.getElementById("librarySearch").value = "";
+      document.getElementById("libraryPostingFilter").value = "";
+      Clerkly.renderLibrary();
+    });
+    document.getElementById("compareCasesButton").addEventListener("click", Clerkly.showLibraryComparison);
+    document.getElementById("closeComparison").addEventListener("click", () => document.getElementById("libraryComparison").classList.add("hidden"));
+    Clerkly.renderLibrary();
+  },
+
+  renderLibrary() {
+    const container = document.getElementById("libraryGroups");
+    if (!container) return;
+    const query = document.getElementById("librarySearch").value.trim().toLowerCase();
+    const posting = document.getElementById("libraryPostingFilter").value;
+    const filtered = Clerkly.cases.filter(item => {
+      const searchable = [item.title, item.posting, item.tags, item.chief_complaint, item.provisional_diagnosis, item.learning, item.notes_snippets].join(" ").toLowerCase();
+      return (!query || searchable.includes(query)) && (!posting || item.posting === posting);
+    });
+    const groups = Clerkly.groupLibraryCases(filtered);
+    if (!groups.length) {
+      container.innerHTML = `<div class="library-empty"><span>⌘</span><h2>${Clerkly.cases.length ? "No matching library cases" : "Your library is ready to grow"}</h2><p>${Clerkly.cases.length ? "Try a different search or clear the posting filter." : "Add an anonymous clinical case and its learning summary will appear here automatically."}</p><a class="primary-button" href="add-case.html">+ Add a case</a></div>`;
+      return;
+    }
+    container.innerHTML = groups.map((group, groupIndex) => `<section class="library-topic-group"><header><div class="library-topic-icon library-color-${groupIndex % 4}">${["✚", "◉", "◆", "✦"][groupIndex % 4]}</div><div><small>SIMILAR CASE GROUP</small><h2>${Clerkly.escape(group.title)}</h2><p>${group.items.length} saved ${group.items.length === 1 ? "case" : "cases"}</p></div></header><div class="library-case-grid">${group.items.map(item => Clerkly.libraryCaseCard(item)).join("")}</div></section>`).join("");
+    container.querySelectorAll("[data-library-compare]").forEach(input => input.addEventListener("change", () => Clerkly.toggleLibraryComparison(input)));
+    container.querySelectorAll("[data-library-ai]").forEach(button => button.addEventListener("click", () => {
+      Clerkly.selected = Clerkly.cases.find(item => String(item.id) === button.dataset.libraryAi);
+      Clerkly.updateAssistantContext();
+      document.getElementById("chatFab").click();
+    }));
+  },
+
+  libraryCaseCard(item) {
+    const date = item.created_at ? new Intl.DateTimeFormat("en-MY", { day: "numeric", month: "short", year: "numeric" }).format(new Date(item.created_at)) : "";
+    const review = Object.entries(Clerkly.parseSystemSelections(item)).map(([system, symptoms]) => `${system}: ${symptoms.join(", ")}`).join(" · ");
+    return `<article class="library-case-card">
+      ${item.case_image ? `<img class="library-case-image" src="${Clerkly.escape(item.case_image)}" alt="Learning image for ${Clerkly.escape(item.title)}">` : `<div class="library-image-placeholder"><span>▧</span> No learning image</div>`}
+      <div class="library-card-heading"><div><small>${Clerkly.escape(item.posting)} · ${Clerkly.escape(date)}</small><h3>${Clerkly.escape(item.title)}</h3></div><label class="compare-check"><input type="checkbox" data-library-compare="${Clerkly.escape(item.id)}" ${Clerkly.libraryCompareIds.has(String(item.id)) ? "checked" : ""}><span>Compare</span></label></div>
+      <div class="library-card-tags">${Clerkly.renderTags(item.tags)}</div>
+      <dl class="library-study-summary"><div><dt>Clinical focus</dt><dd>${Clerkly.escape(item.provisional_diagnosis || item.chief_complaint || "Not recorded")}</dd></div>${review ? `<div><dt>System review</dt><dd>${Clerkly.escape(review)}</dd></div>` : ""}<div><dt>What I learnt</dt><dd>${Clerkly.escape(item.learning || "No learning summary saved.")}</dd></div><div class="library-saved-note"><dt>Saved notes & snippets</dt><dd>${Clerkly.escape(item.notes_snippets || "No saved notes for this case.")}</dd></div></dl>
+      <footer><button type="button" data-library-ai="${Clerkly.escape(item.id)}">✦ Study with AI</button><a href="cases.html?case=${encodeURIComponent(item.id)}">Open in casebook →</a></footer>
+    </article>`;
+  },
+
+  toggleLibraryComparison(input) {
+    const id = String(input.dataset.libraryCompare);
+    if (input.checked && Clerkly.libraryCompareIds.size >= 4) {
+      input.checked = false;
+      alert("You can compare up to four cases at a time.");
+      return;
+    }
+    if (input.checked) Clerkly.libraryCompareIds.add(id);
+    else Clerkly.libraryCompareIds.delete(id);
+    Clerkly.updateLibraryCompareBar();
+  },
+
+  updateLibraryCompareBar() {
+    const count = Clerkly.libraryCompareIds.size;
+    document.getElementById("libraryCompareCount").textContent = `${count} ${count === 1 ? "case" : "cases"} selected`;
+    document.getElementById("compareCasesButton").disabled = count < 2;
+    if (count < 2) document.getElementById("libraryComparison").classList.add("hidden");
+  },
+
+  showLibraryComparison() {
+    const selected = Clerkly.cases.filter(item => Clerkly.libraryCompareIds.has(String(item.id)));
+    if (selected.length < 2) return;
+    const systemSummary = item => Object.entries(Clerkly.parseSystemSelections(item)).map(([system, symptoms]) => `${system}: ${symptoms.join(", ")}`).join(" · ");
+    const rows = [
+      ["Posting", item => item.posting], ["Patient profile", item => [item.patient_age && `Age ${item.patient_age}`, item.patient_gender, item.patient_race].filter(Boolean).join(" · ")],
+      ["Chief complaint", item => item.chief_complaint], ["HOPI summary", item => item.presentation], ["Systemic review", item => systemSummary(item) || item.systemic_review],
+      ["Key findings", item => item.findings], ["Provisional diagnosis", item => item.provisional_diagnosis], ["Differentials", item => item.differential_diagnoses],
+      ["Investigations", item => item.investigations], ["Management", item => item.management_plan], ["What I learnt", item => item.learning], ["Saved notes", item => item.notes_snippets]
+    ];
+    document.getElementById("comparisonTable").innerHTML = `<table class="library-compare-table"><thead><tr><th>Compare</th>${selected.map(item => `<th>${Clerkly.escape(item.title)}</th>`).join("")}</tr></thead><tbody><tr><th>Learning image</th>${selected.map(item => `<td>${item.case_image ? `<img src="${Clerkly.escape(item.case_image)}" alt="Learning image for ${Clerkly.escape(item.title)}">` : "No image"}</td>`).join("")}</tr>${rows.map(([label, getValue]) => `<tr><th>${label}</th>${selected.map(item => `<td>${Clerkly.escape(getValue(item) || "Not recorded")}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    const comparison = document.getElementById("libraryComparison");
+    comparison.classList.remove("hidden");
+    comparison.scrollIntoView({ behavior: "smooth", block: "start" });
+  },
+
   async initProgress() {
     if (!document.getElementById("totalCases")) return;
     const saved = await Clerkly.getCases();
@@ -688,6 +809,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   Clerkly.initAddCase();
   Clerkly.initProgress();
   Clerkly.initDashboard();
+  Clerkly.initLibrary();
   Clerkly.initProfile();
   Clerkly.applyProfileUI();
   Clerkly.initFloatingAssistant();
