@@ -11,6 +11,7 @@ const IMAGE_BUCKET = "case-images";
 const PROFILE_IMAGE_BUCKET = "profile-images";
 const MAX_IMAGE_BYTES = 1024 * 1024;
 const REMEMBER_DURATION_MS = 20 * 24 * 60 * 60 * 1000;
+const PDF_LIB_BROWSER_BUNDLE = require.resolve("pdf-lib/dist/pdf-lib.esm.min.js");
 const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
 const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
 const gemini = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
@@ -21,6 +22,10 @@ app.use(express.urlencoded({ extended: true, limit: "5mb" }));
 app.use("/api", (_req, res, next) => {
   res.set("Cache-Control", "no-store, private");
   next();
+});
+app.get("/vendor/pdf-lib/pdf-lib.esm.min.js", (_req, res) => {
+  res.set("Cache-Control", "public, max-age=31536000, immutable");
+  res.sendFile(PDF_LIB_BROWSER_BUNDLE);
 });
 app.use(express.static(path.join(__dirname, "public")));
 

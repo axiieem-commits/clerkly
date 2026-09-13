@@ -1,4 +1,5 @@
 import imageCompression from "./vendor/browser-image-compression.mjs";
+import { exportClerkingPdf, openPdfPreviewWindow } from "./pdf-export.mjs";
 
 const compressionWorkerUrl = new URL("./vendor/browser-image-compression.js", import.meta.url).href;
 
@@ -226,7 +227,6 @@ const Clerkly = {
     document.getElementById("printCase").addEventListener("click", Clerkly.printSelectedCase);
     document.getElementById("printIdentifierForm").addEventListener("submit", Clerkly.confirmPrintIdentifiers);
     document.getElementById("cancelPrintIdentifiers").addEventListener("click", () => document.getElementById("printIdentifierDialog").close());
-    window.addEventListener("beforeprint", Clerkly.fitPrintSheet);
   },
 
   renderCaseList() {
@@ -285,7 +285,6 @@ const Clerkly = {
     editLink.classList.remove("hidden");
     editLink.href = `add-case.html?edit=${encodeURIComponent(item.id)}`;
     document.getElementById("printCase").classList.remove("hidden");
-    Clerkly.preparePrintSheet(item);
     Clerkly.updateAssistantContext();
   },
 
@@ -300,68 +299,6 @@ const Clerkly = {
     document.getElementById("printCase").classList.add("hidden");
   },
 
-  preparePrintSheet(item) {
-    const numberedLines = value => String(value || "").split(/\n+/).map(line => line.trim()).filter(Boolean).map((line, index) => /^\d+[.)]\s/.test(line) ? line : `${index + 1}. ${line}`).join("\n");
-    const identifiers = Clerkly.getPrintIdentifiers(item.id);
-    const printSheet = document.getElementById("printSheet");
-    const printableText = [item.presentation, item.hopi_site, item.hopi_onset, item.hopi_character, item.hopi_radiation, item.hopi_associations, item.hopi_timing, item.hopi_aggravating_relief, item.hopi_severity, item.systemic_review, item.past_medical_history, item.past_surgical_history, item.differential_diagnoses, item.investigations, item.management_plan].join(" ");
-    const summaryLength = String(item.presentation || "").length;
-    const estimatedSummaryLines = Math.max(3, Math.ceil(summaryLength / 58));
-    printSheet.style.setProperty("--hopi-summary-height", `${Math.min(26, estimatedSummaryLines * 3.2)}mm`);
-    printSheet.style.removeProperty("--print-font-size");
-    printSheet.classList.toggle("print-density-compact", printableText.length > 1800 || summaryLength > 360);
-    printSheet.classList.toggle("print-density-tight", printableText.length > 3000 || summaryLength > 650);
-    const values = {
-      printWard: item.ward || item.posting,
-      printPatientName: identifiers.name,
-      printMrn: identifiers.mrn,
-      printAge: item.patient_age,
-      printGender: item.patient_gender,
-      printRace: item.patient_race,
-      printComplaint: item.chief_complaint,
-      printPresentation: item.presentation,
-      printHopiSite: item.hopi_site,
-      printHopiOnset: item.hopi_onset,
-      printHopiCharacter: item.hopi_character,
-      printHopiRadiation: item.hopi_radiation,
-      printHopiAssociations: item.hopi_associations,
-      printHopiTiming: item.hopi_timing,
-      printHopiAggravating: item.hopi_aggravating_relief,
-      printHopiSeverity: item.hopi_severity,
-      printSystemicReview: item.systemic_review,
-      printPmh: item.past_medical_history,
-      printPsh: item.past_surgical_history,
-      printBloodTransfusion: item.past_blood_transfusion,
-      printMenstrual: item.menstrual_history,
-      printDrug: item.drug_history,
-      printAllergy: item.allergy_history,
-      printFamilySimilar: item.family_similar_problem || item.family_history,
-      printFamilialDisease: item.familial_disease,
-      printOccupation: item.occupation,
-      printMaritalStatus: item.marital_status,
-      printSmoking: item.smoking_history,
-      printAlcohol: item.alcohol_history,
-      printPromiscuity: item.promiscuity_history,
-      printRecreationalDrug: item.recreational_drug_history,
-      printTravel: item.travel_history,
-      printSocialOther: item.social_other || item.social_history,
-      printProvisional: item.provisional_diagnosis,
-      printDifferentials: numberedLines(item.differential_diagnoses),
-      printInvestigations: numberedLines(item.investigations),
-      printManagement: numberedLines(item.management_plan)
-    };
-    Object.entries(values).forEach(([id, value]) => { document.getElementById(id).textContent = value || ""; });
-    document.querySelectorAll("[data-print-system], [data-print-problem]").forEach(element => element.classList.remove("print-selected"));
-    Object.entries(Clerkly.parseSystemSelections(item)).forEach(([system, symptoms]) => {
-      const selectedSystem = Array.from(document.querySelectorAll("[data-print-system]")).find(element => element.dataset.printSystem === system);
-      selectedSystem?.classList.add("print-selected");
-      symptoms.forEach(symptom => {
-        const selectedProblem = Array.from(selectedSystem?.closest("p")?.querySelectorAll("[data-print-problem]") || []).find(element => element.dataset.printProblem === symptom);
-        selectedProblem?.classList.add("print-selected");
-      });
-    });
-  },
-
   printSelectedCase() {
     if (!Clerkly.selected) return;
     const identifiers = Clerkly.getPrintIdentifiers(Clerkly.selected.id);
@@ -370,46 +307,35 @@ const Clerkly = {
     document.getElementById("printIdentifierDialog").showModal();
   },
 
-  confirmPrintIdentifiers(event) {
+  async confirmPrintIdentifiers(event) {
     event.preventDefault();
     if (!Clerkly.selected) return;
+    const submitButton = document.getElementById("confirmPdfExport");
+    const status = document.getElementById("pdfExportStatus");
     const identifiers = {
       name: document.getElementById("printDialogName").value.trim(),
       mrn: document.getElementById("printDialogMrn").value.trim()
     };
     Clerkly.printIdentifiers[String(Clerkly.selected.id)] = identifiers;
-    document.getElementById("printPatientName").textContent = identifiers.name;
-    document.getElementById("printMrn").textContent = identifiers.mrn;
-    document.getElementById("printIdentifierDialog").close();
-    setTimeout(Clerkly.runCasePrint, 50);
-  },
-
-  runCasePrint() {
-    if (!Clerkly.selected) return;
-    const originalTitle = document.title;
-    const safeTitle = String(Clerkly.selected.title || "Clinical case").replace(/[\\/:*?"<>|]/g, "-");
-    document.title = `Clerkly - ${safeTitle} - Clerking Sheet`;
-    window.addEventListener("afterprint", () => {
-      document.title = originalTitle;
+    const previewWindow = openPdfPreviewWindow();
+    submitButton.disabled = true;
+    submitButton.textContent = "Creating PDF…";
+    status.className = "pdf-export-status";
+    status.textContent = "Building a private, one-page landscape PDF on this device…";
+    try {
+      await exportClerkingPdf(Clerkly.selected, identifiers, Clerkly.parseSystemSelections(Clerkly.selected), previewWindow);
+      document.getElementById("printIdentifierDialog").close();
       delete Clerkly.printIdentifiers[String(Clerkly.selected.id)];
-      document.getElementById("printPatientName").textContent = "";
-      document.getElementById("printMrn").textContent = "";
       document.getElementById("printDialogName").value = "";
       document.getElementById("printDialogMrn").value = "";
-    }, { once: true });
-    window.print();
-  },
-
-  fitPrintSheet() {
-    const sheet = document.getElementById("printSheet");
-    if (!sheet) return;
-    let fontSize = sheet.classList.contains("print-density-tight") ? 6.25 : sheet.classList.contains("print-density-compact") ? 7 : 7.8;
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      sheet.style.setProperty("--print-font-size", `${fontSize}pt`);
-      void sheet.offsetHeight;
-      const overflowing = Array.from(sheet.querySelectorAll(".print-panel")).some(panel => panel.scrollHeight > panel.clientHeight + 1 || panel.scrollWidth > panel.clientWidth + 1);
-      if (!overflowing || fontSize <= 5.5) break;
-      fontSize -= 0.25;
+      status.classList.add("hidden");
+    } catch (error) {
+      if (previewWindow && !previewWindow.closed) previewWindow.close();
+      status.className = "pdf-export-status error";
+      status.textContent = error.message || "The PDF could not be created. Please try again.";
+    } finally {
+      submitButton.disabled = false;
+      submitButton.textContent = "Create PDF";
     }
   },
 

@@ -20,7 +20,7 @@
       <div class="portal-top-actions"><a class="secondary-button" href="cases.html">← Back to casebook</a><a class="avatar profile-avatar-link" href="profile.html" aria-label="Manage profile">AZ</a></div>
     </header>
 
-    <section class="portal-notice compact-notice"><span>PRIVACY</span><div><strong>Name and MRN are temporary print-only fields.</strong><p>They are never sent to the server or saved in Supabase, the Casebook or the Library. Print immediately after saving because printing, refreshing or closing the tab clears them. Never place identifiers in any other field.</p></div></section>
+    <section class="portal-notice compact-notice"><span>PRIVACY</span><div><strong>Name and MRN are temporary PDF-only fields.</strong><p>They are never sent to the server or saved in Supabase, the Casebook or the Library. Export the PDF after saving because exporting, refreshing or closing the tab clears them. Never place identifiers in any other field.</p></div></section>
 
     <section class="portal-form-shell clerking-form-shell">
       <header><span>▤</span><div><h2 id="caseFormTitle">New clerking entry</h2><p id="caseFormSubtitle">Follow the sections in order and record only information relevant to your learning.</p></div></header>
@@ -39,8 +39,8 @@
             <label class="form-field">Race<input name="patient_race" maxlength="100" placeholder="If clinically relevant"></label>
           </div>
           <div class="print-only-identifiers">
-            <div class="print-only-heading"><span>▣</span><div><strong>Print-only identifiers</strong><small>Temporary decoy fields — excluded from the saved case and visible only on the next printed sheet.</small></div></div>
-            <div class="section-fields two-fields"><label class="form-field">Patient name<input id="printOnlyPatientName" data-print-only-identifier autocomplete="off" maxlength="120" placeholder="Printed once, never saved"></label><label class="form-field">MRN<input id="printOnlyMrn" data-print-only-identifier autocomplete="off" maxlength="80" placeholder="Printed once, never saved"></label></div>
+            <div class="print-only-heading"><span>▣</span><div><strong>PDF-only identifiers</strong><small>Temporary fields — excluded from the saved case and visible only in the next exported PDF.</small></div></div>
+            <div class="section-fields two-fields"><label class="form-field">Patient name<input id="printOnlyPatientName" data-print-only-identifier autocomplete="off" maxlength="120" placeholder="Exported once, never saved"></label><label class="form-field">MRN<input id="printOnlyMrn" data-print-only-identifier autocomplete="off" maxlength="80" placeholder="Exported once, never saved"></label></div>
           </div>
         </section>
 
@@ -60,7 +60,7 @@
         </section>
 
         <section class="form-section">
-          <header class="form-section-heading"><span>3</span><span><strong>Systemic review</strong><small>Select every relevant symptom across as many systems as needed. Selected words are underlined on the printed sheet.</small></span></header>
+          <header class="form-section-heading"><span>3</span><span><strong>Systemic review</strong><small>Select every relevant symptom across as many systems as needed. Selected words are underlined in the exported PDF.</small></span></header>
           <input type="hidden" name="systemic_review_selections" id="systemicReviewSelections" value="{}"><input type="hidden" name="main_system" id="mainSystem"><input type="hidden" name="system_problem" id="systemProblem">
           <div class="systemic-review-selector" id="systemicReviewSelector" aria-label="Systemic review symptom selector"></div>
           <div class="section-fields"><label class="form-field">System review notes<textarea name="systemic_review" rows="6" placeholder="Record relevant positives, important negatives, severity and duration."></textarea></label></div>
