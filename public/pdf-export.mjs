@@ -162,6 +162,7 @@ export async function buildClerkingPdf(caseItem, identifiers = {}, selections = 
   let systemTop = topRow + 35;
   Object.entries(SYSTEMS).forEach(([system, symptoms]) => {
     const selected = new Set(selections[system] || []);
+    const customSymptoms = [...selected].filter(symptom => /^Other:\s*\S/i.test(symptom));
     const label = SYSTEM_LABELS[system] || system;
     const labelSize = 7.1;
     text(label, sx, systemTop, { font: bold, size: labelSize });
@@ -186,6 +187,16 @@ export async function buildClerkingPdf(caseItem, identifiers = {}, selections = 
       text(suffix, cursorX, cursorTop, { size: labelSize });
       cursorX += suffixWidth;
     });
+    if (customSymptoms.length) {
+      const customTop = cursorTop + 9.2;
+      const customHeight = Math.max(5, systemTop + systemHeights[system] - customTop - 5);
+      const fit = fittedLines(customSymptoms.join("; "), bold, maxX - valueX, customHeight, 6.2, 2.8);
+      fit.lines.forEach((entry, index) => {
+        const entryTop = customTop + index * fit.lineHeight;
+        text(entry, valueX, entryTop, { font: bold, size: fit.size });
+        line(valueX, entryTop + fit.size + 1, valueX + bold.widthOfTextAtSize(entry, fit.size), 0.8);
+      });
+    }
     line(valueX, systemTop + systemHeights[system] - 4, maxX);
     systemTop += systemHeights[system];
   });

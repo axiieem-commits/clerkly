@@ -475,7 +475,13 @@ const Clerkly = {
       "Shortness of breath": "SOB", Oliguria: "Oligouria", "Fits / seizure": "Fits",
       "Visual disturbance": "VD", "Loss of sensation": "LOS", "Pale / bloody / mucous stool": "Pale stool"
     };
-    const normalize = selections => Object.fromEntries(Object.entries(selections).map(([system, symptoms]) => [system, (Array.isArray(symptoms) ? symptoms : [symptoms]).map(symptom => aliases[symptom] || symptom).filter(symptom => Clerkly.systemOptions[system]?.includes(symptom))]).filter(([, symptoms]) => symptoms.length));
+    const normalize = selections => Object.fromEntries(Object.entries(selections)
+      .filter(([system]) => Boolean(Clerkly.systemOptions[system]))
+      .map(([system, symptoms]) => [system, (Array.isArray(symptoms) ? symptoms : [symptoms])
+        .map(symptom => String(aliases[symptom] || symptom || "").trim())
+        .filter(symptom => Clerkly.systemOptions[system].includes(symptom) || /^Other:\s*\S/i.test(symptom))
+        .map(symptom => symptom.slice(0, 260))])
+      .filter(([, symptoms]) => symptoms.length));
     try {
       const parsed = JSON.parse(item.systemic_review_selections || "{}");
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return normalize(parsed);
@@ -486,19 +492,38 @@ const Clerkly = {
   renderSystemSelections(selections = {}) {
     const container = document.getElementById("systemicReviewSelector");
     if (!container) return;
-    container.innerHTML = Object.entries(Clerkly.systemOptions).map(([system, symptoms]) => `<section class="system-review-card"><h3>${Clerkly.escape(system)}</h3><div>${symptoms.map(symptom => `<button type="button" data-review-system="${Clerkly.escape(system)}" data-review-symptom="${Clerkly.escape(symptom)}" class="${selections[system]?.includes(symptom) ? "active" : ""}" aria-pressed="${selections[system]?.includes(symptom) ? "true" : "false"}">${Clerkly.escape(symptom)}</button>`).join("")}</div></section>`).join("");
+    container.innerHTML = Object.entries(Clerkly.systemOptions).map(([system, symptoms]) => {
+      const otherValue = (selections[system] || []).find(symptom => /^Other:\s*/i.test(symptom))?.replace(/^Other:\s*/i, "") || "";
+      return `<section class="system-review-card"><h3>${Clerkly.escape(system)}</h3><div class="system-review-options">${symptoms.map(symptom => `<button type="button" data-review-system="${Clerkly.escape(system)}" data-review-symptom="${Clerkly.escape(symptom)}" class="${selections[system]?.includes(symptom) ? "active" : ""}" aria-pressed="${selections[system]?.includes(symptom) ? "true" : "false"}">${Clerkly.escape(symptom)}</button>`).join("")}<button type="button" class="system-other-button ${otherValue ? "active" : ""}" data-review-other-toggle="${Clerkly.escape(system)}" aria-expanded="${Boolean(otherValue)}">+ Other</button></div><label class="system-review-other ${otherValue ? "" : "hidden"}" data-review-other-panel="${Clerkly.escape(system)}"><span>Other ${Clerkly.escape(system)} symptom(s)</span><input type="text" data-review-other-input="${Clerkly.escape(system)}" maxlength="240" value="${Clerkly.escape(otherValue)}" placeholder="Enter another relevant symptom"></label></section>`;
+    }).join("");
     Clerkly.syncSystemSelections();
-    container.querySelectorAll("button").forEach(button => button.addEventListener("click", () => {
+    container.querySelectorAll("[data-review-symptom]").forEach(button => button.addEventListener("click", () => {
       button.classList.toggle("active");
       button.setAttribute("aria-pressed", String(button.classList.contains("active")));
       Clerkly.syncSystemSelections();
     }));
+    container.querySelectorAll("[data-review-other-toggle]").forEach(button => button.addEventListener("click", () => {
+      const panel = container.querySelector(`[data-review-other-panel="${CSS.escape(button.dataset.reviewOtherToggle)}"]`);
+      const willOpen = panel.classList.contains("hidden");
+      panel.classList.toggle("hidden", !willOpen);
+      button.classList.toggle("active", willOpen);
+      button.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) panel.querySelector("input").focus();
+      else panel.querySelector("input").value = "";
+      Clerkly.syncSystemSelections();
+    }));
+    container.querySelectorAll("[data-review-other-input]").forEach(input => input.addEventListener("input", Clerkly.syncSystemSelections));
   },
 
   syncSystemSelections() {
     const selections = {};
     document.querySelectorAll("[data-review-system].active").forEach(button => {
       (selections[button.dataset.reviewSystem] ||= []).push(button.dataset.reviewSymptom);
+    });
+    document.querySelectorAll("[data-review-other-input]").forEach(input => {
+      const panel = input.closest("[data-review-other-panel]");
+      const value = input.value.trim();
+      if (!panel.classList.contains("hidden") && value) (selections[input.dataset.reviewOtherInput] ||= []).push(`Other: ${value}`);
     });
     const field = document.getElementById("systemicReviewSelections");
     if (field) field.value = JSON.stringify(selections);
