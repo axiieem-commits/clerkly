@@ -31,6 +31,7 @@
           <div class="section-fields two-fields">
             <label class="form-field">Case title<input name="title" required placeholder="e.g. Community-acquired pneumonia"></label>
             <label class="form-field">Posting<select name="posting" required><option>Internal Medicine</option><option>Surgery</option><option>Paediatrics</option><option>O&amp;G</option><option>Emergency</option><option>Primary Care</option></select></label>
+            <label class="form-field">Ward<input name="ward" maxlength="80" placeholder="e.g. Ward 8A"></label>
           </div>
           <div class="section-fields three-fields">
             <label class="form-field">Age<input name="patient_age" inputmode="numeric" type="number" min="0" max="120" placeholder="Years"></label>
@@ -43,15 +44,21 @@
           <header class="form-section-heading"><span>2</span><span><strong>Presenting complaint and HOPI</strong><small>Build a clear timeline in the patient’s own terms.</small></span></header>
           <div class="section-fields">
             <label class="form-field">Chief complaint<input name="chief_complaint" placeholder="Main symptom and duration"></label>
-            <label class="form-field">History of presenting illness<textarea id="hopiText" name="presentation" rows="7" required placeholder="Describe the chronology and relevant positive and negative symptoms."></textarea></label>
-            <div class="clerking-guide"><strong>Symptom guide — click to add a prompt</strong><button type="button" data-hopi-guide="Site">Site</button><button type="button" data-hopi-guide="Onset">Onset</button><button type="button" data-hopi-guide="Character">Character</button><button type="button" data-hopi-guide="Radiation">Radiation</button><button type="button" data-hopi-guide="Associations">Associations</button><button type="button" data-hopi-guide="Timing">Timing</button><button type="button" data-hopi-guide="Aggravating / relieving factors">Aggravating / relieving factors</button><button type="button" data-hopi-guide="Severity">Severity</button></div>
+            <label class="form-field">HOPI summary<textarea id="hopiText" name="presentation" rows="4" required placeholder="A short chronological summary. This prints immediately after HOPI on the sheet."></textarea></label>
+            <div class="clerking-guide hopi-guide-toggle"><strong>Structured HOPI guide</strong><span>These details print on the matching lines beneath the HOPI summary.</span><button type="button" id="toggleHopiGuide" aria-expanded="true">Hide guide</button></div>
+            <div class="hopi-detail-grid" id="hopiDetailGrid">
+              <label class="form-field">Site<input name="hopi_site" placeholder="Location of symptom"></label><label class="form-field">Onset<input name="hopi_onset" placeholder="When and how it started"></label>
+              <label class="form-field">Characteristics<input name="hopi_character" placeholder="Nature or character"></label><label class="form-field">Radiation<input name="hopi_radiation" placeholder="Where it spreads"></label>
+              <label class="form-field">Associations<input name="hopi_associations" placeholder="Associated symptoms"></label><label class="form-field">Time / timing<input name="hopi_timing" placeholder="Duration, pattern or progression"></label>
+              <label class="form-field">Exacerbating / alleviating factors<input name="hopi_aggravating_relief" placeholder="What worsens or relieves it"></label><label class="form-field">Severity<input name="hopi_severity" placeholder="Score or clinical severity"></label>
+            </div>
           </div>
         </section>
 
         <section class="form-section">
-          <header class="form-section-heading"><span>3</span><span><strong>Systemic review</strong><small>Select a main system and the relevant symptom or sickness type.</small></span></header>
-          <div class="system-picker"><label class="form-field">Main system<select id="mainSystem" name="main_system"><option value="">Select a system</option><option>General</option><option>Cardiovascular</option><option>Respiratory</option><option>Gastrointestinal</option><option>Genitourinary</option><option>Neurological</option><option>Musculoskeletal</option></select></label><label class="form-field">Symptom / sickness type<select id="systemProblem" name="system_problem" disabled><option value="">Select a main system first</option></select></label></div>
-          <div class="system-review-guide"><strong>System guide</strong><button type="button" data-system="General">General</button><button type="button" data-system="Cardiovascular">Cardiovascular</button><button type="button" data-system="Respiratory">Respiratory</button><button type="button" data-system="Gastrointestinal">Gastrointestinal</button><button type="button" data-system="Genitourinary">Genitourinary</button><button type="button" data-system="Neurological">Neurological</button><button type="button" data-system="Musculoskeletal">Musculoskeletal</button></div>
+          <header class="form-section-heading"><span>3</span><span><strong>Systemic review</strong><small>Select every relevant symptom across as many systems as needed. Selected words are underlined on the printed sheet.</small></span></header>
+          <input type="hidden" name="systemic_review_selections" id="systemicReviewSelections" value="{}"><input type="hidden" name="main_system" id="mainSystem"><input type="hidden" name="system_problem" id="systemProblem">
+          <div class="systemic-review-selector" id="systemicReviewSelector" aria-label="Systemic review symptom selector"></div>
           <div class="section-fields"><label class="form-field">System review notes<textarea name="systemic_review" rows="6" placeholder="Record relevant positives, important negatives, severity and duration."></textarea></label></div>
         </section>
 
@@ -65,6 +72,14 @@
             <label class="form-field">Family history<textarea name="family_history" rows="4" placeholder="Relevant familial conditions or similar illness"></textarea></label>
             <label class="form-field">Social history<textarea name="social_history" rows="4" placeholder="Smoking, alcohol, travel, exposure and functional context only"></textarea></label>
           </div>
+          <div class="structured-history"><h3>Clerking sheet details</h3><p>Optional fields mapped to the matching lines on the printable template.</p><div class="section-fields two-fields">
+            <label class="form-field">Past blood transfusion<input name="past_blood_transfusion" placeholder="Yes / no and relevant details"></label><label class="form-field">Menstrual history<input name="menstrual_history" placeholder="If clinically relevant"></label>
+            <label class="form-field">Similar problem in family<input name="family_similar_problem" placeholder="Relevant family occurrence"></label><label class="form-field">Familial disease<input name="familial_disease" placeholder="e.g. DM, malignancy"></label>
+            <label class="form-field">Occupation<input name="occupation" placeholder="Non-identifying occupation only"></label><label class="form-field">Marital status<input name="marital_status" placeholder="M / S / D"></label>
+            <label class="form-field">Smoking history<input name="smoking_history" placeholder="Y / N and packs/year"></label><label class="form-field">Alcohol history<input name="alcohol_history" placeholder="Y / N and relevant amount"></label>
+            <label class="form-field">Promiscuity / sexual risk<input name="promiscuity_history" placeholder="Only if clinically relevant"></label><label class="form-field">Recreational drug history<input name="recreational_drug_history" placeholder="Y / N and relevant details"></label>
+            <label class="form-field">Travel history<input name="travel_history" placeholder="Relevant location/exposure only"></label><label class="form-field">Other social history<input name="social_other" placeholder="Other clinically relevant detail"></label>
+          </div></div>
         </section>
 
         <section class="form-section">

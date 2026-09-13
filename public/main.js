@@ -249,9 +249,11 @@ const Clerkly = {
     document.getElementById("caseRace").textContent = item.patient_race || "Not recorded";
     document.getElementById("caseChiefComplaint").textContent = item.chief_complaint || "Not recorded.";
     document.getElementById("casePresentation").textContent = item.presentation;
-    document.getElementById("caseSystemicReview").textContent = item.systemic_review || "Not recorded.";
-    document.getElementById("caseMainSystem").textContent = item.main_system || "No system selected";
-    document.getElementById("caseSystemProblem").textContent = item.system_problem || "";
+    const reviewSelections = Clerkly.parseSystemSelections(item);
+    const reviewSummary = Object.entries(reviewSelections).map(([system, symptoms]) => `${system}: ${symptoms.join(", ")}`);
+    document.getElementById("caseSystemicReview").textContent = item.systemic_review || "No additional notes.";
+    document.getElementById("caseMainSystem").textContent = reviewSummary.length ? `${reviewSummary.length} system${reviewSummary.length === 1 ? "" : "s"} recorded` : "No system selected";
+    document.getElementById("caseSystemProblem").textContent = reviewSummary.join(" · ");
     document.getElementById("casePmh").textContent = item.past_medical_history || "Not recorded.";
     document.getElementById("casePsh").textContent = item.past_surgical_history || "Not recorded.";
     document.getElementById("caseDrugHistory").textContent = item.drug_history || "Not recorded.";
@@ -294,33 +296,54 @@ const Clerkly = {
   },
 
   preparePrintSheet(item) {
+    const numberedLines = value => String(value || "").split(/\n+/).map(line => line.trim()).filter(Boolean).map((line, index) => /^\d+[.)]\s/.test(line) ? line : `${index + 1}. ${line}`).join("\n");
     const values = {
-      printWard: item.posting,
+      printWard: item.ward || item.posting,
       printAge: item.patient_age,
       printGender: item.patient_gender,
       printRace: item.patient_race,
       printComplaint: item.chief_complaint,
       printPresentation: item.presentation,
+      printHopiSite: item.hopi_site,
+      printHopiOnset: item.hopi_onset,
+      printHopiCharacter: item.hopi_character,
+      printHopiRadiation: item.hopi_radiation,
+      printHopiAssociations: item.hopi_associations,
+      printHopiTiming: item.hopi_timing,
+      printHopiAggravating: item.hopi_aggravating_relief,
+      printHopiSeverity: item.hopi_severity,
       printSystemicReview: item.systemic_review,
       printPmh: item.past_medical_history,
       printPsh: item.past_surgical_history,
+      printBloodTransfusion: item.past_blood_transfusion,
+      printMenstrual: item.menstrual_history,
       printDrug: item.drug_history,
       printAllergy: item.allergy_history,
-      printFamily: item.family_history,
-      printSocial: item.social_history,
+      printFamilySimilar: item.family_similar_problem || item.family_history,
+      printFamilialDisease: item.familial_disease,
+      printOccupation: item.occupation,
+      printMaritalStatus: item.marital_status,
+      printSmoking: item.smoking_history,
+      printAlcohol: item.alcohol_history,
+      printPromiscuity: item.promiscuity_history,
+      printRecreationalDrug: item.recreational_drug_history,
+      printTravel: item.travel_history,
+      printSocialOther: item.social_other || item.social_history,
       printProvisional: item.provisional_diagnosis,
-      printDifferentials: item.differential_diagnoses,
-      printInvestigations: item.investigations,
-      printManagement: item.management_plan
+      printDifferentials: numberedLines(item.differential_diagnoses),
+      printInvestigations: numberedLines(item.investigations),
+      printManagement: numberedLines(item.management_plan)
     };
     Object.entries(values).forEach(([id, value]) => { document.getElementById(id).textContent = value || ""; });
     document.querySelectorAll("[data-print-system], [data-print-problem]").forEach(element => element.classList.remove("print-selected"));
-    const selectedSystem = Array.from(document.querySelectorAll("[data-print-system]")).find(element => element.dataset.printSystem === item.main_system);
-    selectedSystem?.classList.add("print-selected");
-    if (selectedSystem && item.system_problem) {
-      const selectedProblem = Array.from(selectedSystem.closest("p").querySelectorAll("[data-print-problem]")).find(element => element.dataset.printProblem === item.system_problem);
-      selectedProblem?.classList.add("print-selected");
-    }
+    Object.entries(Clerkly.parseSystemSelections(item)).forEach(([system, symptoms]) => {
+      const selectedSystem = Array.from(document.querySelectorAll("[data-print-system]")).find(element => element.dataset.printSystem === system);
+      selectedSystem?.classList.add("print-selected");
+      symptoms.forEach(symptom => {
+        const selectedProblem = Array.from(selectedSystem?.closest("p")?.querySelectorAll("[data-print-problem]") || []).find(element => element.dataset.printProblem === symptom);
+        selectedProblem?.classList.add("print-selected");
+      });
+    });
   },
 
   printSelectedCase() {
@@ -367,7 +390,7 @@ const Clerkly = {
         Array.from(form.elements).forEach(field => {
           if (field.name && field.name !== "case_image" && field.type !== "file" && savedCase[field.name] !== undefined && savedCase[field.name] !== null) field.value = savedCase[field.name];
         });
-        Clerkly.updateSystemProblems(savedCase.system_problem || "");
+        Clerkly.renderSystemSelections(Clerkly.parseSystemSelections(savedCase));
         if (savedCase.case_image) {
           const preview = document.getElementById("imagePreview");
           preview.src = savedCase.case_image;
@@ -431,42 +454,65 @@ const Clerkly = {
   },
 
   systemOptions: {
-    General: ["Fever", "Lethargy / fatigue", "Loss of appetite", "Weight loss", "Other"],
-    Cardiovascular: ["Chest pain / angina", "Palpitations", "Tachycardia / bradycardia", "Cyanosis", "Edema", "Other"],
-    Respiratory: ["Cough", "Hemoptysis", "Shortness of breath", "Tachypnea", "Stridor", "Wheeze", "Hoarseness", "Other"],
-    Gastrointestinal: ["Dysphagia", "Vomiting", "Diarrhea", "Pale / bloody / mucous stool", "Change of bowel habit", "Constipation", "Other"],
-    Genitourinary: ["Dysuria", "Polyuria", "Oliguria", "Frequency", "Urgency", "Hematuria", "Nocturia", "Hesitancy", "Incontinence", "Other"],
-    Neurological: ["Headache", "Dizziness", "Fits / seizure", "Visual disturbance", "Loss of sensation", "Limb weakness", "Other"],
-    Musculoskeletal: ["Arthralgia", "Myalgia", "Muscle weakness", "Joint swelling", "Other"]
+    General: ["Conscious", "Fever", "Lethargy", "LOA", "LOW"],
+    Cardiovascular: ["Angina", "Palpitation", "Tachy", "Brady", "Cyanosis", "Edema"],
+    Respiratory: ["Cough", "Hemoptysis", "SOB", "Tachypnea", "Stridor", "Wheeze", "Hoarseness"],
+    Gastrointestinal: ["Dysphagia", "Vomiting", "Diarrhea", "Pale stool", "Bloody stool", "Mucous stool", "Change of bowel habit", "Constipation"],
+    Genitourinary: ["Dysuria", "Polyuria", "Oligouria", "Frequency", "Urgency", "Hematuria", "Sandy", "Nocturia", "Hesitancy", "Incontinence"],
+    Neurological: ["Headache", "Dizziness", "Fits", "VD", "GD", "LOS", "Limb weakness"],
+    Musculoskeletal: ["Arthralgia", "Myalgia", "Muscle weakness", "Joint swelling"]
   },
 
-  updateSystemProblems(selectedProblem = "") {
+  parseSystemSelections(item = {}) {
+    const aliases = {
+      "Lethargy / fatigue": "Lethargy", "Loss of appetite": "LOA", "Weight loss": "LOW",
+      "Chest pain / angina": "Angina", Palpitations: "Palpitation", "Tachycardia / bradycardia": "Tachy",
+      "Shortness of breath": "SOB", Oliguria: "Oligouria", "Fits / seizure": "Fits",
+      "Visual disturbance": "VD", "Loss of sensation": "LOS", "Pale / bloody / mucous stool": "Pale stool"
+    };
+    const normalize = selections => Object.fromEntries(Object.entries(selections).map(([system, symptoms]) => [system, (Array.isArray(symptoms) ? symptoms : [symptoms]).map(symptom => aliases[symptom] || symptom).filter(symptom => Clerkly.systemOptions[system]?.includes(symptom))]).filter(([, symptoms]) => symptoms.length));
+    try {
+      const parsed = JSON.parse(item.systemic_review_selections || "{}");
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return normalize(parsed);
+    } catch (_) {}
+    return item.main_system && item.system_problem ? normalize({ [item.main_system]: [item.system_problem] }) : {};
+  },
+
+  renderSystemSelections(selections = {}) {
+    const container = document.getElementById("systemicReviewSelector");
+    if (!container) return;
+    container.innerHTML = Object.entries(Clerkly.systemOptions).map(([system, symptoms]) => `<section class="system-review-card"><h3>${Clerkly.escape(system)}</h3><div>${symptoms.map(symptom => `<button type="button" data-review-system="${Clerkly.escape(system)}" data-review-symptom="${Clerkly.escape(symptom)}" class="${selections[system]?.includes(symptom) ? "active" : ""}" aria-pressed="${selections[system]?.includes(symptom) ? "true" : "false"}">${Clerkly.escape(symptom)}</button>`).join("")}</div></section>`).join("");
+    Clerkly.syncSystemSelections();
+    container.querySelectorAll("button").forEach(button => button.addEventListener("click", () => {
+      button.classList.toggle("active");
+      button.setAttribute("aria-pressed", String(button.classList.contains("active")));
+      Clerkly.syncSystemSelections();
+    }));
+  },
+
+  syncSystemSelections() {
+    const selections = {};
+    document.querySelectorAll("[data-review-system].active").forEach(button => {
+      (selections[button.dataset.reviewSystem] ||= []).push(button.dataset.reviewSymptom);
+    });
+    const field = document.getElementById("systemicReviewSelections");
+    if (field) field.value = JSON.stringify(selections);
+    const first = Object.entries(selections)[0];
     const system = document.getElementById("mainSystem");
     const problem = document.getElementById("systemProblem");
-    if (!system || !problem) return;
-    const options = Clerkly.systemOptions[system.value] || [];
-    problem.disabled = !options.length;
-    problem.innerHTML = options.length ? `<option value="">Select a symptom</option>${options.map(value => `<option>${Clerkly.escape(value)}</option>`).join("")}` : '<option value="">Select a main system first</option>';
-    if (options.includes(selectedProblem)) problem.value = selectedProblem;
-    document.querySelectorAll("[data-system]").forEach(button => button.classList.toggle("active", button.dataset.system === system.value));
+    if (system) system.value = first?.[0] || "";
+    if (problem) problem.value = first?.[1]?.[0] || "";
   },
 
   initClerkingGuides() {
-    const system = document.getElementById("mainSystem");
-    if (!system) return;
-    system.addEventListener("change", () => Clerkly.updateSystemProblems());
-    document.querySelectorAll("[data-system]").forEach(button => button.addEventListener("click", () => {
-      system.value = button.dataset.system;
-      Clerkly.updateSystemProblems();
-      document.getElementById("systemProblem").focus();
-    }));
-    document.querySelectorAll("[data-hopi-guide]").forEach(button => button.addEventListener("click", () => {
-      const field = document.getElementById("hopiText");
-      const prefix = field.value.trim() ? "\n" : "";
-      field.value += `${prefix}${button.dataset.hopiGuide}: `;
-      field.focus();
-      field.setSelectionRange(field.value.length, field.value.length);
-    }));
+    Clerkly.renderSystemSelections();
+    const toggle = document.getElementById("toggleHopiGuide");
+    toggle?.addEventListener("click", () => {
+      const guide = document.getElementById("hopiDetailGrid");
+      const hidden = guide.classList.toggle("hidden");
+      toggle.textContent = hidden ? "Show guide" : "Hide guide";
+      toggle.setAttribute("aria-expanded", String(!hidden));
+    });
   },
 
   async initProfile() {

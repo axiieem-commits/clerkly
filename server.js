@@ -25,10 +25,14 @@ app.use("/api", (_req, res, next) => {
 app.use(express.static(path.join(__dirname, "public")));
 
 const CASE_FIELDS = [
-  "title", "posting", "patient_age", "patient_gender", "patient_race",
-  "chief_complaint", "presentation", "main_system", "system_problem", "systemic_review", "past_medical_history",
+  "title", "posting", "ward", "patient_age", "patient_gender", "patient_race",
+  "chief_complaint", "presentation", "hopi_site", "hopi_onset", "hopi_character", "hopi_radiation",
+  "hopi_associations", "hopi_timing", "hopi_aggravating_relief", "hopi_severity",
+  "main_system", "system_problem", "systemic_review_selections", "systemic_review", "past_medical_history",
   "past_surgical_history", "drug_history", "allergy_history", "family_history",
-  "social_history", "findings", "provisional_diagnosis", "differential_diagnoses",
+  "social_history", "past_blood_transfusion", "menstrual_history", "family_similar_problem", "familial_disease",
+  "occupation", "marital_status", "smoking_history", "alcohol_history", "promiscuity_history",
+  "recreational_drug_history", "travel_history", "social_other", "findings", "provisional_diagnosis", "differential_diagnoses",
   "investigations", "management_plan", "notes_snippets", "learning", "tags", "status"
 ];
 
