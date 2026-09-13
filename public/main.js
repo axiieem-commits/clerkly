@@ -60,6 +60,7 @@ const Auth = {
     const displayName = document.getElementById("loginDisplayName");
     const submitButton = document.getElementById("loginSubmit");
     const toggleButton = document.getElementById("loginModeToggle");
+    toggleButton.classList.add("hidden");
     const rememberRow = document.getElementById("rememberRow");
     const forgotButton = document.getElementById("forgotPassword");
     const message = document.getElementById("loginMessage");
@@ -303,9 +304,15 @@ const Clerkly = {
     document.getElementById("printCase").classList.add("hidden");
   },
 
-  printSelectedCase() {
+  async printSelectedCase() {
     if (!Clerkly.selected) return;
-    const identifiers = Clerkly.getPrintIdentifiers(Clerkly.selected.id);
+    let identifiers;
+    try {
+      const response = await fetch(`/api/cases/${encodeURIComponent(Clerkly.selected.id)}`, { cache: 'no-store' });
+      const item = await response.json();
+      if (!response.ok) throw new Error(item.message || 'Could not load identifiers.');
+      identifiers = { name: item.patient_name, mrn: item.patient_mrn };
+    } catch (error) { alert(error.message); return; }
     document.getElementById("printDialogName").value = identifiers.name || "";
     document.getElementById("printDialogMrn").value = identifiers.mrn || "";
     document.getElementById("printIdentifierDialog").showModal();
@@ -420,12 +427,6 @@ const Clerkly = {
         const response = await fetch(endpoint, { method: editId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.message);
-        const printName = document.getElementById("printOnlyPatientName")?.value.trim() || "";
-        const printMrn = document.getElementById("printOnlyMrn")?.value.trim() || "";
-        if (printName || printMrn) {
-          sessionStorage.setItem(`clerkly_print_identifiers_${result.id}`, JSON.stringify({ name: printName, mrn: printMrn, expiresAt: Date.now() + 15 * 60 * 1000 }));
-          document.querySelectorAll("[data-print-only-identifier]").forEach(field => { field.value = ""; });
-        }
         notice.className = "notice";
         notice.textContent = editId ? "Changes saved. Returning to your case…" : "Case saved. Returning to your casebook…";
         notice.style.display = "block";

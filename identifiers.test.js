@@ -1,0 +1,20 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const { encryptIdentifiers, decryptIdentifiers } = require('./identifiers');
+test('identifier encryption is randomized, authenticated, and bound to owner and case', () => {
+  process.env.PATIENT_DATA_ENCRYPTION_KEY = 'ab'.repeat(32);
+  const body = { patient_name: 'Fictional Patient', patient_mrn: 'TEST-42' };
+  const a = encryptIdentifiers(body, 'owner', 'case');
+  const b = encryptIdentifiers(body, 'owner', 'case');
+  assert.notEqual(a, b);
+  assert.ok(!a.includes(body.patient_name));
+  assert.deepEqual(decryptIdentifiers(a, 'owner', 'case'), { name: body.patient_name, mrn: body.patient_mrn });
+  assert.throws(() => decryptIdentifiers(a, 'other', 'case'));
+  assert.throws(() => decryptIdentifiers(a, 'owner', 'other'));
+  const parts = a.split('.');
+  const bytes = Buffer.from(parts[3], 'base64'); bytes[0] ^= 1; parts[3] = bytes.toString('base64');
+  assert.throws(() => decryptIdentifiers(parts.join('.'), 'owner', 'case'));
+  delete process.env.PATIENT_DATA_ENCRYPTION_KEY;
+  assert.throws(() => encryptIdentifiers(body, 'owner', 'case'));
+  assert.deepEqual(decryptIdentifiers(null, 'owner', 'case'), { name: '', mrn: '' });
+});

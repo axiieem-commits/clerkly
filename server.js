@@ -1,6 +1,7 @@
 const express = require("express");
 const path = require("path");
 const crypto = require("crypto");
+const { encryptIdentifiers, decryptIdentifiers } = require('./identifiers');
 const { GoogleGenAI } = require("@google/genai");
 require("dotenv").config();
 
@@ -140,6 +141,12 @@ async function requireUser(req, res, next) {
 
     req.user = user;
     req.supabase = createUserClient(accessToken);
+    const { data: allowed, error: accessError } = await req.supabase.rpc('is_allowed_user');
+    if (accessError) return res.status(503).json({ message: 'Private access setup is incomplete.' });
+    if (!allowed) {
+      clearSessionCookies(res);
+      return res.status(401).json({ message: 'Access is restricted to the existing registered accounts.' });
+    }
     next();
   } catch (error) {
     next(error);
@@ -175,22 +182,14 @@ async function uploadImage(client, userId, dataUrl, bucket = IMAGE_BUCKET) {
 }
 
 async function addSignedImage(client, row) {
+  if (row) { const { patient_identifiers_encrypted, ...safe } = row; row = safe; }
   if (!row?.case_image_path) return { ...row, case_image: "" };
   const { data, error } = await client.storage.from(IMAGE_BUCKET).createSignedUrl(row.case_image_path, 3600);
   return { ...row, case_image: error ? "" : data.signedUrl };
 }
 
-app.post("/api/auth/signup", async (req, res, next) => {
-  try {
-    const email = String(req.body.email || "").trim().toLowerCase();
-    const password = String(req.body.password || "");
-    const displayName = String(req.body.displayName || "").trim();
-    if (!email || !displayName || password.length < 8) return res.status(400).json({ message: "Enter your name, email and a password of at least 8 characters." });
-    const { data, error } = await createPublicClient().auth.signUp({ email, password, options: { data: { display_name: displayName, year: "Year 3", posting: "Internal Medicine" } } });
-    if (error) return res.status(400).json({ message: error.message });
-    if (data.session) setSessionCookies(res, data.session);
-    res.status(201).json({ authenticated: Boolean(data.session), user: data.user ? safeUser(data.user) : null, message: data.session ? "Account created." : "Check your email to confirm your account, then sign in." });
-  } catch (error) { next(error); }
+app.post("/api/auth/signup", (_req, res) => {
+  return res.status(403).json({ message: 'Registration is closed. Access is limited to existing accounts.' });
 });
 
 app.post("/api/auth/login", async (req, res, next) => {
@@ -200,6 +199,9 @@ app.post("/api/auth/login", async (req, res, next) => {
     if (!email || !password) return res.status(400).json({ message: "Enter your email and password." });
     const { data, error } = await createPublicClient().auth.signInWithPassword({ email, password });
     if (error || !data.session) return res.status(401).json({ message: error?.message || "Sign in failed." });
+    const { data: allowed, error: accessError } = await createUserClient(data.session.access_token).rpc('is_allowed_user');
+    if (accessError) return res.status(503).json({ message: 'Private access setup is incomplete.' });
+    if (!allowed) return res.status(403).json({ message: 'Access is restricted to the existing registered accounts.' });
     const rememberUntil = req.body.rememberMe === true ? Date.now() + REMEMBER_DURATION_MS : null;
     setSessionCookies(res, data.session, rememberUntil);
     res.json({ user: safeUser(data.user) });
@@ -293,7 +295,8 @@ app.get("/api/cases/:id", requireUser, async (req, res, next) => {
   try {
     const { data, error } = await req.supabase.from("clinical_cases").select("*").eq("id", req.params.id).single();
     if (error || !data) return res.status(404).json({ message: "Case not found." });
-    res.json(await addSignedImage(req.supabase, data));
+    const identifiers = decryptIdentifiers(data.patient_identifiers_encrypted, req.user.id, data.id);
+    res.json({ ...await addSignedImage(req.supabase, data), patient_name: identifiers.name, patient_mrn: identifiers.mrn });
   } catch (error) { next(error); }
 });
 
@@ -303,8 +306,10 @@ app.post("/api/cases", requireUser, async (req, res, next) => {
     const values = normalizeCase(req.body);
     const validationError = validateCase(values);
     if (validationError) return res.status(400).json({ message: validationError });
+    const caseId = crypto.randomUUID();
+    values.patient_identifiers_encrypted = encryptIdentifiers(req.body, req.user.id, caseId);
     uploadedPath = await uploadImage(req.supabase, req.user.id, req.body.case_image);
-    const { data, error } = await req.supabase.from("clinical_cases").insert({ ...values, user_id: req.user.id, case_image_path: uploadedPath }).select("id").single();
+    const { data, error } = await req.supabase.from("clinical_cases").insert({ ...values, id: caseId, user_id: req.user.id, case_image_path: uploadedPath }).select("id").single();
     if (error) throw error;
     res.status(201).json({ id: data.id, message: "Case saved successfully." });
   } catch (error) {
@@ -323,6 +328,7 @@ app.put("/api/cases/:id", requireUser, async (req, res, next) => {
     if (findError || !existing) return res.status(404).json({ message: "Case not found." });
     uploadedPath = await uploadImage(req.supabase, req.user.id, req.body.case_image);
     const update = { ...values, updated_at: new Date().toISOString() };
+    if ('patient_name' in req.body || 'patient_mrn' in req.body) update.patient_identifiers_encrypted = encryptIdentifiers(req.body, req.user.id, req.params.id);
     if (uploadedPath) update.case_image_path = uploadedPath;
     const { data, error } = await req.supabase.from("clinical_cases").update(update).eq("id", req.params.id).select("id").single();
     if (error) throw error;
@@ -366,7 +372,7 @@ function guidedAnswer(prompt, caseData) {
 
 app.post("/api/assistant", requireUser, async (req, res) => {
   const prompt = String(req.body.prompt || "").trim().slice(0, 4000);
-  const caseData = req.body.caseData || {};
+  const caseData = Object.fromEntries(CASE_FIELDS.map(field => [field, req.body.caseData?.[field] || '']));
   if (!prompt) return res.status(400).json({ message: "Please enter a question." });
   if (!gemini) return res.json({ answer: guidedAnswer(prompt, caseData), mode: "guided" });
   try {

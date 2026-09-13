@@ -34,7 +34,7 @@
 <dialog class="print-identifier-dialog" id="printIdentifierDialog">
   <form id="printIdentifierForm">
     <header><span>▣</span><div><small>PDF ONLY</small><h2>Confirm patient identifiers</h2></div></header>
-    <p>Name and MRN are inserted locally into this PDF only. They are not saved in Supabase, the Casebook or the Library.</p>
+    <p>Saved Name and MRN are filled automatically. Changes here apply to this PDF only; use Edit / add info to change the saved values.</p>
     <label class="form-field">Patient name<input id="printDialogName" autocomplete="off" maxlength="120" placeholder="Name for this PDF"></label>
     <label class="form-field">MRN<input id="printDialogMrn" autocomplete="off" maxlength="80" placeholder="MRN for this PDF"></label>
     <p class="pdf-export-status hidden" id="pdfExportStatus" role="status"></p>
