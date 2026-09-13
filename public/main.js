@@ -189,9 +189,9 @@ const Clerkly = {
   libraryCompareIds: new Set(),
   printIdentifiers: {},
 
-  async getCases() {
+  async getCases(includeNames = false) {
     try {
-      const response = await fetch("/api/cases");
+      const response = await fetch(includeNames ? "/api/cases?includeNames=true" : "/api/cases");
       if (response.status === 401) {
         await Auth.logout();
         return [];
@@ -220,7 +220,7 @@ const Clerkly = {
 
   async initCasebook() {
     if (!document.getElementById("caseList")) return;
-    Clerkly.cases = await Clerkly.getCases();
+    Clerkly.cases = await Clerkly.getCases(true);
     const requestedId = new URLSearchParams(location.search).get("case");
     Clerkly.selected = Clerkly.cases.find(item => String(item.id) === requestedId) || Clerkly.cases[0];
     Clerkly.renderCaseList();
@@ -237,10 +237,10 @@ const Clerkly = {
   renderCaseList() {
     const query = (document.getElementById("caseSearch")?.value || "").toLowerCase();
     const filtered = Clerkly.cases.filter(item =>
-      `${item.title} ${item.posting} ${item.tags}`.toLowerCase().includes(query));
+      `${item.title} ${item.patient_name || ''} ${item.posting} ${item.tags}`.toLowerCase().includes(query));
     document.getElementById("caseList").innerHTML = filtered.map(item => `
       <button class="case-item ${Clerkly.selected?.id === item.id ? "active" : ""}" data-id="${item.id}">
-        <strong>${Clerkly.escape(item.title)}</strong><small>${Clerkly.escape(item.posting)}</small>${Clerkly.renderTags(item.tags)}
+        <strong>${Clerkly.escape(item.title)}</strong>${item.patient_name ? `<small>${Clerkly.escape(item.patient_name)}</small>` : ''}<small>${Clerkly.escape(item.posting)}</small>${Clerkly.renderTags(item.tags)}
       </button>`).join("") || `<p class="empty-state">No matching cases. Add a new entry or try another search.</p>`;
     document.querySelectorAll(".case-item").forEach(button => button.addEventListener("click", () => {
       Clerkly.selected = Clerkly.cases.find(item => String(item.id) === button.dataset.id);
@@ -255,6 +255,7 @@ const Clerkly = {
     document.getElementById("caseTitle").textContent = item.title;
     document.getElementById("caseStatus").textContent = item.status;
     document.getElementById("caseAge").textContent = item.patient_age || "Not recorded";
+    document.getElementById("casePatientName").textContent = item.patient_name || "Not recorded";
     document.getElementById("caseGender").textContent = item.patient_gender || "Not recorded";
     document.getElementById("caseRace").textContent = item.patient_race || "Not recorded";
     document.getElementById("caseChiefComplaint").textContent = item.chief_complaint || "Not recorded.";

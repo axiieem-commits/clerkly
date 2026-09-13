@@ -11,7 +11,7 @@
     <a class="portal-brand" href="index.html"><span class="logo-mark">C</span><span>clerkly<span class="logo-dot">.</span></span></a>
     <nav><a href="index.html"><span>⌂</span>Home</a><a href="cases.html"><span>▤</span>My cases</a><a class="active" href="add-case.html"><span>＋</span>Add case</a><a href="library.html"><span>⌘</span>Library</a><a href="progress.html"><span>↗</span>Progress</a><a href="profile.html"><span>●</span>Profile</a><button onclick="document.getElementById('chatFab').click()"><span>✦</span>AI study copilot</button></nav>
     <button class="portal-logout" onclick="Auth.logout()"><span>↪</span>Logout</button>
-    <div class="sidebar-privacy"><strong>Keep clinical notes anonymous.</strong><span>Use the dedicated encrypted fields for Name and MRN.</span></div>
+
   </aside>
 
   <main class="portal-main portal-page-main">
@@ -20,14 +20,14 @@
       <div class="portal-top-actions"><a class="secondary-button" href="cases.html">← Back to casebook</a><a class="avatar profile-avatar-link" href="profile.html" aria-label="Manage profile">AZ</a></div>
     </header>
 
-    <section class="portal-notice compact-notice"><span>PRIVACY</span><div><strong>Name and MRN are encrypted when saved.</strong><p>Name and MRN are stored encrypted and available to you when editing or exporting this case. Keep identifiers out of other notes.</p></div></section>
+
 
     <section class="portal-form-shell clerking-form-shell">
       <header><span>▤</span><div><h2 id="caseFormTitle">New clerking entry</h2><p id="caseFormSubtitle">Follow the sections in order and record only information relevant to your learning.</p></div></header>
 
       <form class="form-grid portal-form clerking-form" id="caseForm">
         <section class="form-section">
-          <header class="form-section-heading"><span>1</span><span><strong>Case and patient details</strong><small>Use the encrypted Name and MRN fields for identifiers.</small></span></header>
+          <header class="form-section-heading"><span>1</span><span><strong>Case and patient details</strong></span></header>
           <div class="section-fields two-fields">
             <label class="form-field">Case title<input name="title" required placeholder="e.g. Community-acquired pneumonia"></label>
             <label class="form-field">Posting<select name="posting" required><option>Internal Medicine</option><option>Surgery</option><option>Paediatrics</option><option>O&amp;G</option><option>Emergency</option><option>Primary Care</option></select></label>
@@ -39,7 +39,7 @@
             <label class="form-field">Race<input name="patient_race" maxlength="100" placeholder="If clinically relevant"></label>
           </div>
           <div class="print-only-identifiers">
-            <div class="print-only-heading"><span>▣</span><div><strong>Patient identifiers</strong><small>Saved securely with this case and filled automatically in the PDF.</small></div></div>
+            <div class="print-only-heading"><span>▣</span><div><strong>Patient identifiers</strong></div></div>
             <div class="section-fields two-fields"><label class="form-field">Patient name<input id="printOnlyPatientName" name="patient_name" autocomplete="off" maxlength="120" placeholder="Patient name"></label><label class="form-field">MRN<input id="printOnlyMrn" name="patient_mrn" autocomplete="off" maxlength="80" placeholder="MRN"></label></div>
           </div>
         </section>

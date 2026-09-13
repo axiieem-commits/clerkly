@@ -287,7 +287,11 @@ app.get("/api/cases", requireUser, async (req, res, next) => {
   try {
     const { data, error } = await req.supabase.from("clinical_cases").select("*").order("created_at", { ascending: false });
     if (error) throw error;
-    res.json(await Promise.all(data.map(row => addSignedImage(req.supabase, row))));
+    res.json(await Promise.all(data.map(async row => {
+      const result = await addSignedImage(req.supabase, row);
+      if (req.query.includeNames === 'true') result.patient_name = decryptIdentifiers(row.patient_identifiers_encrypted, req.user.id, row.id).name;
+      return result;
+    })));
   } catch (error) { next(error); }
 });
 
