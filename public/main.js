@@ -208,6 +208,10 @@ const Clerkly = {
     return element.innerHTML;
   },
 
+  escapeAttribute(value) {
+    return String(value || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  },
+
   renderTags(value) {
     return String(value || "").split(",").filter(Boolean)
       .map(tag => `<span class="tag">${Clerkly.escape(tag.trim())}</span>`).join("");
@@ -493,26 +497,62 @@ const Clerkly = {
     const container = document.getElementById("systemicReviewSelector");
     if (!container) return;
     container.innerHTML = Object.entries(Clerkly.systemOptions).map(([system, symptoms]) => {
-      const otherValue = (selections[system] || []).find(symptom => /^Other:\s*/i.test(symptom))?.replace(/^Other:\s*/i, "") || "";
-      return `<section class="system-review-card"><h3>${Clerkly.escape(system)}</h3><div class="system-review-options">${symptoms.map(symptom => `<button type="button" data-review-system="${Clerkly.escape(system)}" data-review-symptom="${Clerkly.escape(symptom)}" class="${selections[system]?.includes(symptom) ? "active" : ""}" aria-pressed="${selections[system]?.includes(symptom) ? "true" : "false"}">${Clerkly.escape(symptom)}</button>`).join("")}<button type="button" class="system-other-button ${otherValue ? "active" : ""}" data-review-other-toggle="${Clerkly.escape(system)}" aria-expanded="${Boolean(otherValue)}">+ Other</button></div><label class="system-review-other ${otherValue ? "" : "hidden"}" data-review-other-panel="${Clerkly.escape(system)}"><span>Other ${Clerkly.escape(system)} symptom(s)</span><input type="text" data-review-other-input="${Clerkly.escape(system)}" maxlength="240" value="${Clerkly.escape(otherValue)}" placeholder="Enter another relevant symptom"></label></section>`;
+      const otherValues = (selections[system] || []).filter(symptom => /^Other:\s*/i.test(symptom)).map(symptom => symptom.replace(/^Other:\s*/i, ""));
+      const otherRows = otherValues.map(value => Clerkly.systemOtherRow(system, value)).join("");
+      return `<section class="system-review-card"><h3>${Clerkly.escape(system)}</h3><div class="system-review-options">${symptoms.map(symptom => `<button type="button" data-review-system="${Clerkly.escape(system)}" data-review-symptom="${Clerkly.escape(symptom)}" class="${selections[system]?.includes(symptom) ? "active" : ""}" aria-pressed="${selections[system]?.includes(symptom) ? "true" : "false"}">${Clerkly.escape(symptom)}</button>`).join("")}<button type="button" class="system-other-button ${otherValues.length ? "active" : ""}" data-review-other-toggle="${Clerkly.escape(system)}" aria-expanded="${Boolean(otherValues.length)}">+ Other</button></div><div class="system-review-other ${otherValues.length ? "" : "hidden"}" data-review-other-panel="${Clerkly.escape(system)}"><span>Other ${Clerkly.escape(system)} symptom(s)</span><div class="system-review-other-list" data-review-other-list="${Clerkly.escape(system)}">${otherRows}</div><button type="button" class="system-other-add" data-review-other-add="${Clerkly.escape(system)}">+ Add another symptom</button></div></section>`;
     }).join("");
     Clerkly.syncSystemSelections();
-    container.querySelectorAll("[data-review-symptom]").forEach(button => button.addEventListener("click", () => {
-      button.classList.toggle("active");
-      button.setAttribute("aria-pressed", String(button.classList.contains("active")));
-      Clerkly.syncSystemSelections();
-    }));
-    container.querySelectorAll("[data-review-other-toggle]").forEach(button => button.addEventListener("click", () => {
-      const panel = container.querySelector(`[data-review-other-panel="${CSS.escape(button.dataset.reviewOtherToggle)}"]`);
-      const willOpen = panel.classList.contains("hidden");
-      panel.classList.toggle("hidden", !willOpen);
-      button.classList.toggle("active", willOpen);
-      button.setAttribute("aria-expanded", String(willOpen));
-      if (willOpen) panel.querySelector("input").focus();
-      else panel.querySelector("input").value = "";
-      Clerkly.syncSystemSelections();
-    }));
-    container.querySelectorAll("[data-review-other-input]").forEach(input => input.addEventListener("input", Clerkly.syncSystemSelections));
+    container.onclick = event => {
+      const symptomButton = event.target.closest("[data-review-symptom]");
+      if (symptomButton) {
+        symptomButton.classList.toggle("active");
+        symptomButton.setAttribute("aria-pressed", String(symptomButton.classList.contains("active")));
+        Clerkly.syncSystemSelections();
+        return;
+      }
+      const toggleButton = event.target.closest("[data-review-other-toggle]");
+      if (toggleButton) {
+        const system = toggleButton.dataset.reviewOtherToggle;
+        const panel = container.querySelector(`[data-review-other-panel="${CSS.escape(system)}"]`);
+        const list = panel.querySelector("[data-review-other-list]");
+        const willOpen = panel.classList.contains("hidden");
+        panel.classList.toggle("hidden", !willOpen);
+        toggleButton.classList.toggle("active", willOpen);
+        toggleButton.setAttribute("aria-expanded", String(willOpen));
+        if (willOpen) {
+          if (!list.querySelector("input")) list.insertAdjacentHTML("beforeend", Clerkly.systemOtherRow(system));
+          list.querySelector("input").focus();
+        } else list.innerHTML = "";
+        Clerkly.syncSystemSelections();
+        return;
+      }
+      const addButton = event.target.closest("[data-review-other-add]");
+      if (addButton) {
+        const list = container.querySelector(`[data-review-other-list="${CSS.escape(addButton.dataset.reviewOtherAdd)}"]`);
+        list.insertAdjacentHTML("beforeend", Clerkly.systemOtherRow(addButton.dataset.reviewOtherAdd));
+        list.lastElementChild.querySelector("input").focus();
+        return;
+      }
+      const removeButton = event.target.closest("[data-review-other-remove]");
+      if (removeButton) {
+        const panel = removeButton.closest("[data-review-other-panel]");
+        removeButton.closest(".system-review-other-row").remove();
+        if (!panel.querySelector("[data-review-other-input]")) {
+          panel.classList.add("hidden");
+          const toggle = container.querySelector(`[data-review-other-toggle="${CSS.escape(panel.dataset.reviewOtherPanel)}"]`);
+          toggle.classList.remove("active");
+          toggle.setAttribute("aria-expanded", "false");
+        }
+        Clerkly.syncSystemSelections();
+      }
+    };
+    container.oninput = event => {
+      if (event.target.matches("[data-review-other-input]")) Clerkly.syncSystemSelections();
+    };
+  },
+
+  systemOtherRow(system, value = "") {
+    return `<div class="system-review-other-row"><input type="text" data-review-other-input="${Clerkly.escapeAttribute(system)}" maxlength="240" value="${Clerkly.escapeAttribute(value)}" placeholder="Enter another relevant symptom"><button type="button" data-review-other-remove aria-label="Remove this custom symptom">Remove</button></div>`;
   },
 
   syncSystemSelections() {
