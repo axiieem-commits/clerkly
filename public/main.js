@@ -224,6 +224,8 @@ const Clerkly = {
     document.getElementById("deleteCase").addEventListener("click", Clerkly.deleteSelected);
     document.getElementById("reviewCase").addEventListener("click", Clerkly.markReviewed);
     document.getElementById("printCase").addEventListener("click", Clerkly.printSelectedCase);
+    document.getElementById("printIdentifierForm").addEventListener("submit", Clerkly.confirmPrintIdentifiers);
+    document.getElementById("cancelPrintIdentifiers").addEventListener("click", () => document.getElementById("printIdentifierDialog").close());
     window.addEventListener("beforeprint", Clerkly.fitPrintSheet);
   },
 
@@ -362,6 +364,28 @@ const Clerkly = {
 
   printSelectedCase() {
     if (!Clerkly.selected) return;
+    const identifiers = Clerkly.getPrintIdentifiers(Clerkly.selected.id);
+    document.getElementById("printDialogName").value = identifiers.name || "";
+    document.getElementById("printDialogMrn").value = identifiers.mrn || "";
+    document.getElementById("printIdentifierDialog").showModal();
+  },
+
+  confirmPrintIdentifiers(event) {
+    event.preventDefault();
+    if (!Clerkly.selected) return;
+    const identifiers = {
+      name: document.getElementById("printDialogName").value.trim(),
+      mrn: document.getElementById("printDialogMrn").value.trim()
+    };
+    Clerkly.printIdentifiers[String(Clerkly.selected.id)] = identifiers;
+    document.getElementById("printPatientName").textContent = identifiers.name;
+    document.getElementById("printMrn").textContent = identifiers.mrn;
+    document.getElementById("printIdentifierDialog").close();
+    setTimeout(Clerkly.runCasePrint, 50);
+  },
+
+  runCasePrint() {
+    if (!Clerkly.selected) return;
     const originalTitle = document.title;
     const safeTitle = String(Clerkly.selected.title || "Clinical case").replace(/[\\/:*?"<>|]/g, "-");
     document.title = `Clerkly - ${safeTitle} - Clerking Sheet`;
@@ -370,6 +394,8 @@ const Clerkly = {
       delete Clerkly.printIdentifiers[String(Clerkly.selected.id)];
       document.getElementById("printPatientName").textContent = "";
       document.getElementById("printMrn").textContent = "";
+      document.getElementById("printDialogName").value = "";
+      document.getElementById("printDialogMrn").value = "";
     }, { once: true });
     window.print();
   },
