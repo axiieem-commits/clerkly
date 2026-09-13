@@ -185,6 +185,7 @@ const Clerkly = {
   cases: [],
   selected: null,
   libraryCompareIds: new Set(),
+  printIdentifiers: {},
 
   async getCases() {
     try {
@@ -298,8 +299,11 @@ const Clerkly = {
 
   preparePrintSheet(item) {
     const numberedLines = value => String(value || "").split(/\n+/).map(line => line.trim()).filter(Boolean).map((line, index) => /^\d+[.)]\s/.test(line) ? line : `${index + 1}. ${line}`).join("\n");
+    const identifiers = Clerkly.getPrintIdentifiers(item.id);
     const values = {
       printWard: item.ward || item.posting,
+      printPatientName: identifiers.name,
+      printMrn: identifiers.mrn,
       printAge: item.patient_age,
       printGender: item.patient_gender,
       printRace: item.patient_race,
@@ -352,8 +356,28 @@ const Clerkly = {
     const originalTitle = document.title;
     const safeTitle = String(Clerkly.selected.title || "Clinical case").replace(/[\\/:*?"<>|]/g, "-");
     document.title = `Clerkly - ${safeTitle} - Clerking Sheet`;
-    window.addEventListener("afterprint", () => { document.title = originalTitle; }, { once: true });
+    window.addEventListener("afterprint", () => {
+      document.title = originalTitle;
+      delete Clerkly.printIdentifiers[String(Clerkly.selected.id)];
+      document.getElementById("printPatientName").textContent = "";
+      document.getElementById("printMrn").textContent = "";
+    }, { once: true });
     window.print();
+  },
+
+  getPrintIdentifiers(caseId) {
+    const id = String(caseId || "");
+    if (Clerkly.printIdentifiers[id]) return Clerkly.printIdentifiers[id];
+    const key = `clerkly_print_identifiers_${id}`;
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(key) || "null");
+      sessionStorage.removeItem(key);
+      if (stored?.expiresAt > Date.now()) {
+        Clerkly.printIdentifiers[id] = { name: String(stored.name || ""), mrn: String(stored.mrn || "") };
+        return Clerkly.printIdentifiers[id];
+      }
+    } catch { sessionStorage.removeItem(key); }
+    return { name: "", mrn: "" };
   },
 
   async markReviewed() {
@@ -418,6 +442,12 @@ const Clerkly = {
         const response = await fetch(endpoint, { method: editId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const result = await response.json();
         if (!response.ok) throw new Error(result.message);
+        const printName = document.getElementById("printOnlyPatientName")?.value.trim() || "";
+        const printMrn = document.getElementById("printOnlyMrn")?.value.trim() || "";
+        if (printName || printMrn) {
+          sessionStorage.setItem(`clerkly_print_identifiers_${result.id}`, JSON.stringify({ name: printName, mrn: printMrn, expiresAt: Date.now() + 15 * 60 * 1000 }));
+          document.querySelectorAll("[data-print-only-identifier]").forEach(field => { field.value = ""; });
+        }
         notice.className = "notice";
         notice.textContent = editId ? "Changes saved. Returning to your case…" : "Case saved. Returning to your casebook…";
         notice.style.display = "block";
