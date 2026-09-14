@@ -11,7 +11,6 @@ const PORT = process.env.PORT || 3000;
 const IMAGE_BUCKET = "case-images";
 const PROFILE_IMAGE_BUCKET = "profile-images";
 const MAX_IMAGE_BYTES = 1024 * 1024;
-const MAX_CASE_IMAGES = 6;
 const REMEMBER_DURATION_MS = 20 * 24 * 60 * 60 * 1000;
 const PDF_LIB_BROWSER_BUNDLE = require.resolve("pdf-lib/dist/pdf-lib.esm.min.js");
 const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
@@ -195,8 +194,13 @@ function parseJsonArray(value, fieldName) {
 function caseImagePayload(body) {
   const images = parseJsonArray(body.case_images, "case_images");
   if (!images.length && body.case_image) images.push(body.case_image);
-  if (images.length > MAX_CASE_IMAGES) throw new Error(`A case can have up to ${MAX_CASE_IMAGES} images.`);
   return images;
+}
+
+function suppliedImagePaths(body, userId) {
+  const paths = parseJsonArray(body.uploaded_case_image_paths, "uploaded_case_image_paths").map(String);
+  if (paths.some(path => !path.startsWith(`${userId}/`))) throw new Error("One or more uploaded image paths are invalid.");
+  return [...new Set(paths)];
 }
 
 async function uploadImages(client, userId, dataUrls) {
@@ -221,6 +225,30 @@ async function addSignedImage(client, row) {
   const { case_images: _metadata, ...safeRow } = row || {};
   return { ...safeRow, case_images: signedImages, case_image: signedImages[0]?.url || "" };
 }
+
+app.post("/api/case-images/upload", requireUser, async (req, res, next) => {
+  try {
+    const path = await uploadImage(req.supabase, req.user.id, req.body.case_image);
+    if (!path) return res.status(400).json({ message: "Choose an image to upload." });
+    res.status(201).json({ path });
+  } catch (error) { next(error); }
+});
+
+app.delete("/api/case-images/upload", requireUser, async (req, res, next) => {
+  try {
+    const paths = parseJsonArray(req.body.paths, "paths").map(String).filter(path => path.startsWith(`${req.user.id}/`));
+    const removable = [];
+    for (const path of paths) {
+      const [{ data: metadata }, { data: legacy }] = await Promise.all([
+        req.supabase.from("case_images").select("id").eq("storage_path", path).maybeSingle(),
+        req.supabase.from("clinical_cases").select("id").eq("case_image_path", path).maybeSingle()
+      ]);
+      if (!metadata && !legacy) removable.push(path);
+    }
+    if (removable.length) await req.supabase.storage.from(IMAGE_BUCKET).remove(removable);
+    res.json({ message: "Unused uploads removed." });
+  } catch (error) { next(error); }
+});
 
 app.post("/api/auth/signup", (_req, res) => {
   return res.status(403).json({ message: 'Registration is closed. Access is limited to existing accounts.' });
@@ -348,7 +376,8 @@ app.post("/api/cases", requireUser, async (req, res, next) => {
     const caseId = crypto.randomUUID();
     createdCaseId = caseId;
     values.patient_identifiers_encrypted = encryptIdentifiers(req.body, req.user.id, caseId);
-    uploadedPaths = await uploadImages(req.supabase, req.user.id, caseImagePayload(req.body));
+    uploadedPaths = suppliedImagePaths(req.body, req.user.id);
+    uploadedPaths.push(...await uploadImages(req.supabase, req.user.id, caseImagePayload(req.body)));
     const { data, error } = await req.supabase.from("clinical_cases").insert({ ...values, id: caseId, user_id: req.user.id, case_image_path: null }).select("id").single();
     if (error) throw error;
     if (uploadedPaths.length) {
@@ -375,9 +404,8 @@ app.put("/api/cases/:id", requireUser, async (req, res, next) => {
     const hasKeepList = Object.prototype.hasOwnProperty.call(req.body, "keep_case_image_paths");
     const requestedKeep = hasKeepList ? parseJsonArray(req.body.keep_case_image_paths, "keep_case_image_paths").map(String) : existingPaths;
     const keepPaths = requestedKeep.filter(path => existingPaths.includes(path));
-    const newImages = caseImagePayload(req.body);
-    if (keepPaths.length + newImages.length > MAX_CASE_IMAGES) return res.status(400).json({ message: `A case can have up to ${MAX_CASE_IMAGES} images.` });
-    uploadedPaths = await uploadImages(req.supabase, req.user.id, newImages);
+    uploadedPaths = suppliedImagePaths(req.body, req.user.id);
+    uploadedPaths.push(...await uploadImages(req.supabase, req.user.id, caseImagePayload(req.body)));
     const update = { ...values, updated_at: new Date().toISOString() };
     if ('patient_name' in req.body || 'patient_mrn' in req.body) update.patient_identifiers_encrypted = encryptIdentifiers(req.body, req.user.id, req.params.id);
     if (hasKeepList) update.case_image_path = keepPaths.includes(existing.case_image_path) ? existing.case_image_path : null;

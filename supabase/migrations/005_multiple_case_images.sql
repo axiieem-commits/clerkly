@@ -6,7 +6,7 @@ create table if not exists public.case_images (
   case_id uuid not null references public.clinical_cases(id) on delete cascade,
   user_id uuid not null references auth.users(id) on delete cascade,
   storage_path text not null unique,
-  sort_order integer not null default 0 check (sort_order >= 0 and sort_order < 6),
+  sort_order integer not null default 0 check (sort_order >= 0),
   created_at timestamptz not null default now()
 );
 

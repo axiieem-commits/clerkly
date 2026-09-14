@@ -2,7 +2,6 @@ import imageCompression from "./vendor/browser-image-compression.mjs";
 import { exportClerkingPdf, openPdfPreviewWindow } from "./pdf-export.mjs";
 
 const compressionWorkerUrl = new URL("./vendor/browser-image-compression.js", import.meta.url).href;
-const MAX_CASE_IMAGES = 6;
 
 async function compressImage(file) {
   const options = {
@@ -434,7 +433,21 @@ const Clerkly = {
       event.preventDefault();
       const notice = document.getElementById("formNotice");
       const payload = Object.fromEntries(new FormData(form).entries());
+      const submitButton = document.getElementById("caseSubmitButton");
+      const newImages = Clerkly.caseImageDrafts.filter(image => image.kind === "new");
+      const uploadedPaths = [];
+      submitButton.disabled = true;
       try {
+        for (let index = 0; index < newImages.length; index += 1) {
+          submitButton.textContent = `Uploading image ${index + 1} of ${newImages.length}…`;
+          const uploadResponse = await fetch("/api/case-images/upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ case_image: newImages[index].dataUrl }) });
+          const uploadResult = await uploadResponse.json();
+          if (!uploadResponse.ok) throw new Error(uploadResult.message || `Image ${index + 1} could not be uploaded.`);
+          uploadedPaths.push(uploadResult.path);
+        }
+        payload.case_images = "[]";
+        payload.uploaded_case_image_paths = JSON.stringify(uploadedPaths);
+        submitButton.textContent = editId ? "Saving changes…" : "Saving case…";
         const endpoint = editId ? `/api/cases/${encodeURIComponent(editId)}` : "/api/cases";
         const response = await fetch(endpoint, { method: editId ? "PUT" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
         const result = await response.json();
@@ -444,9 +457,14 @@ const Clerkly = {
         notice.style.display = "block";
         setTimeout(() => window.location.href = `cases.html?case=${encodeURIComponent(result.id)}`, 800);
       } catch (error) {
+        if (uploadedPaths.length) {
+          await fetch("/api/case-images/upload", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paths: uploadedPaths }) }).catch(() => undefined);
+        }
         notice.className = "notice error";
         notice.textContent = error.message;
         notice.style.display = "block";
+        submitButton.disabled = false;
+        submitButton.textContent = editId ? "Save changes" : "Save case";
       }
     });
   },
@@ -477,17 +495,14 @@ const Clerkly = {
 
   async prepareCaseImages(files) {
     const help = document.getElementById("caseImageHelp");
-    const available = MAX_CASE_IMAGES - Clerkly.caseImageDrafts.length;
     if (!files.length) return;
-    if (available <= 0) {
-      help.textContent = `A case can have up to ${MAX_CASE_IMAGES} images. Remove one before adding another.`;
-      document.getElementById("caseImageInput").value = "";
-      return;
-    }
-    const selected = files.slice(0, available);
-    help.textContent = `Compressing ${selected.length} image${selected.length === 1 ? "" : "s"}…`;
+    const submitButton = document.getElementById("caseSubmitButton");
+    const originalButtonText = submitButton.textContent;
+    submitButton.disabled = true;
+    submitButton.textContent = "Preparing images…";
+    help.textContent = `Compressing ${files.length} image${files.length === 1 ? "" : "s"}…`;
     try {
-      for (const file of selected) {
+      for (const file of files) {
         const compressed = await compressImage(file);
         const dataUrl = await new Promise((resolve, reject) => {
           const reader = new FileReader();
@@ -498,23 +513,23 @@ const Clerkly = {
         Clerkly.caseImageDrafts.push({ kind: "new", url: dataUrl, dataUrl, name: file.name });
       }
       Clerkly.syncCaseImageDrafts();
-      help.textContent = files.length > available
-        ? `${selected.length} images added. Only ${MAX_CASE_IMAGES} images are allowed per case.`
-        : `${Clerkly.caseImageDrafts.length} of ${MAX_CASE_IMAGES} images ready.`;
+      help.textContent = `${Clerkly.caseImageDrafts.length} image${Clerkly.caseImageDrafts.length === 1 ? "" : "s"} ready.`;
     } catch (error) {
       help.textContent = error.message || "Could not prepare these images. Try JPG, PNG or WebP files.";
     } finally {
       document.getElementById("caseImageInput").value = "";
+      submitButton.disabled = false;
+      submitButton.textContent = originalButtonText;
     }
   },
 
   syncCaseImageDrafts() {
     const drafts = Clerkly.caseImageDrafts;
-    document.getElementById("caseImagesData").value = JSON.stringify(drafts.filter(image => image.kind === "new").map(image => image.dataUrl));
+    document.getElementById("caseImagesData").value = "[]";
     document.getElementById("keepCaseImagePaths").value = JSON.stringify(drafts.filter(image => image.kind === "existing" && image.path).map(image => image.path));
     document.getElementById("imagePreviewGrid").innerHTML = drafts.map((image, index) => `<span class="image-preview-item"><img src="${Clerkly.escapeAttribute(image.url)}" alt="Selected learning image ${index + 1}"><button type="button" data-remove-case-image="${index}" aria-label="Remove image ${index + 1}">×</button><small>${Clerkly.escape(image.name || `Image ${index + 1}`)}</small></span>`).join("");
     const help = document.getElementById("caseImageHelp");
-    if (help && !drafts.length) help.textContent = "Optional. Add up to 6 JPG, PNG or WebP images. Each image is compressed before upload. Never upload an identifiable patient image.";
+    if (help && !drafts.length) help.textContent = "Optional. Add multiple JPG, PNG or WebP images. Each image is compressed and uploaded separately. Never upload an identifiable patient image.";
   },
 
   systemOptions: {
