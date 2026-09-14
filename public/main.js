@@ -2,6 +2,7 @@ import imageCompression from "./vendor/browser-image-compression.mjs";
 import { exportClerkingPdf, openPdfPreviewWindow } from "./pdf-export.mjs";
 
 const compressionWorkerUrl = new URL("./vendor/browser-image-compression.js", import.meta.url).href;
+const MAX_CASE_IMAGES = 6;
 
 async function compressImage(file) {
   const options = {
@@ -188,6 +189,7 @@ const Clerkly = {
   selected: null,
   libraryCompareIds: new Set(),
   printIdentifiers: {},
+  caseImageDrafts: [],
 
   async getCases(includeNames = false) {
     try {
@@ -279,10 +281,14 @@ const Clerkly = {
     document.getElementById("caseLearning").textContent = item.learning;
     document.getElementById("caseSnippets").textContent = item.notes_snippets || "No snippets saved for this case.";
     const imageWrap = document.getElementById("caseImageWrap");
-    if (item.case_image) {
-      document.getElementById("caseImage").src = item.case_image;
+    const images = Array.isArray(item.case_images) && item.case_images.length
+      ? item.case_images
+      : (item.case_image ? [{ url: item.case_image }] : []);
+    if (images.length) {
+      document.getElementById("caseImageGallery").innerHTML = images.map((image, index) => `<img src="${Clerkly.escapeAttribute(image.url)}" alt="Learning image ${index + 1} of ${images.length} for ${Clerkly.escapeAttribute(item.title)}">`).join("");
       imageWrap.classList.remove("hidden");
     } else {
+      document.getElementById("caseImageGallery").innerHTML = "";
       imageWrap.classList.add("hidden");
     }
     document.getElementById("deleteCase").classList.remove("hidden");
@@ -389,9 +395,14 @@ const Clerkly = {
     if (!form) return;
     const editId = new URLSearchParams(location.search).get("edit");
     const imageInput = document.getElementById("caseImageInput");
-    imageInput.addEventListener("change", () => Clerkly.prepareImage(imageInput.files[0], {
-      inputId: "caseImageInput", dataId: "caseImageData", previewId: "imagePreview", helpId: "caseImageHelp"
-    }));
+    Clerkly.caseImageDrafts = [];
+    imageInput.addEventListener("change", () => Clerkly.prepareCaseImages(Array.from(imageInput.files || [])));
+    document.getElementById("imagePreviewGrid").addEventListener("click", event => {
+      const button = event.target.closest("[data-remove-case-image]");
+      if (!button) return;
+      Clerkly.caseImageDrafts.splice(Number(button.dataset.removeCaseImage), 1);
+      Clerkly.syncCaseImageDrafts();
+    });
     Clerkly.initClerkingGuides();
     if (editId) {
       try {
@@ -399,14 +410,14 @@ const Clerkly = {
         const savedCase = await response.json();
         if (!response.ok) throw new Error(savedCase.message || "Could not load this case.");
         Array.from(form.elements).forEach(field => {
-          if (field.name && field.name !== "case_image" && field.type !== "file" && savedCase[field.name] !== undefined && savedCase[field.name] !== null) field.value = savedCase[field.name];
+          if (field.name && !["case_images", "keep_case_image_paths"].includes(field.name) && field.type !== "file" && savedCase[field.name] !== undefined && savedCase[field.name] !== null) field.value = savedCase[field.name];
         });
         Clerkly.renderSystemSelections(Clerkly.parseSystemSelections(savedCase));
-        if (savedCase.case_image) {
-          const preview = document.getElementById("imagePreview");
-          preview.src = savedCase.case_image;
-          preview.classList.remove("hidden");
-        }
+        Clerkly.caseImageDrafts = (Array.isArray(savedCase.case_images) && savedCase.case_images.length
+          ? savedCase.case_images
+          : (savedCase.case_image ? [{ path: savedCase.case_image_path || "", url: savedCase.case_image }] : []))
+          .map(image => ({ kind: "existing", path: image.path || "", url: image.url, name: "Saved image" }));
+        Clerkly.syncCaseImageDrafts();
         document.getElementById("formBreadcrumb").textContent = "Edit case";
         document.getElementById("casePageTitle").textContent = "Update clinical case";
         document.getElementById("caseFormTitle").textContent = "Continue this clerking entry";
@@ -462,6 +473,48 @@ const Clerkly = {
       if (help) help.textContent = error.message || "Could not compress this image. Try another JPG, PNG or WebP file.";
       setTimeout(() => { if (help && help.textContent.includes("Could not")) help.textContent = originalHelp; }, 5000);
     }
+  },
+
+  async prepareCaseImages(files) {
+    const help = document.getElementById("caseImageHelp");
+    const available = MAX_CASE_IMAGES - Clerkly.caseImageDrafts.length;
+    if (!files.length) return;
+    if (available <= 0) {
+      help.textContent = `A case can have up to ${MAX_CASE_IMAGES} images. Remove one before adding another.`;
+      document.getElementById("caseImageInput").value = "";
+      return;
+    }
+    const selected = files.slice(0, available);
+    help.textContent = `Compressing ${selected.length} image${selected.length === 1 ? "" : "s"}…`;
+    try {
+      for (const file of selected) {
+        const compressed = await compressImage(file);
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error("Could not read this image."));
+          reader.readAsDataURL(compressed);
+        });
+        Clerkly.caseImageDrafts.push({ kind: "new", url: dataUrl, dataUrl, name: file.name });
+      }
+      Clerkly.syncCaseImageDrafts();
+      help.textContent = files.length > available
+        ? `${selected.length} images added. Only ${MAX_CASE_IMAGES} images are allowed per case.`
+        : `${Clerkly.caseImageDrafts.length} of ${MAX_CASE_IMAGES} images ready.`;
+    } catch (error) {
+      help.textContent = error.message || "Could not prepare these images. Try JPG, PNG or WebP files.";
+    } finally {
+      document.getElementById("caseImageInput").value = "";
+    }
+  },
+
+  syncCaseImageDrafts() {
+    const drafts = Clerkly.caseImageDrafts;
+    document.getElementById("caseImagesData").value = JSON.stringify(drafts.filter(image => image.kind === "new").map(image => image.dataUrl));
+    document.getElementById("keepCaseImagePaths").value = JSON.stringify(drafts.filter(image => image.kind === "existing" && image.path).map(image => image.path));
+    document.getElementById("imagePreviewGrid").innerHTML = drafts.map((image, index) => `<span class="image-preview-item"><img src="${Clerkly.escapeAttribute(image.url)}" alt="Selected learning image ${index + 1}"><button type="button" data-remove-case-image="${index}" aria-label="Remove image ${index + 1}">×</button><small>${Clerkly.escape(image.name || `Image ${index + 1}`)}</small></span>`).join("");
+    const help = document.getElementById("caseImageHelp");
+    if (help && !drafts.length) help.textContent = "Optional. Add up to 6 JPG, PNG or WebP images. Each image is compressed before upload. Never upload an identifiable patient image.";
   },
 
   systemOptions: {

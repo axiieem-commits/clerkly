@@ -9,7 +9,7 @@ Follow these sections in order. You only need the Supabase **Project URL** and *
 3. Wait for the project to finish preparing.
 4. Open **SQL Editor** and select **New query**.
 5. Open `supabase/migrations/001_clerkly_schema.sql` from this project, copy the whole file into the SQL Editor, and select **Run**.
-6. Open `supabase/migrations/002_profiles_and_system_review.sql`, copy the whole file into a new query, and select **Run**.
+6. Run each remaining file in `supabase/migrations` in number order, through `005_multiple_case_images.sql`, using a new SQL Editor query for each file.
 7. The scripts create:
    - the `clinical_cases` table;
    - the private student `profiles` table;
@@ -113,7 +113,7 @@ Test the deployed website in a private/incognito browser window:
 
 1. Create and confirm an account.
 2. Sign in and create an anonymous case.
-3. Upload a non-identifiable learning image and confirm that the page compresses it before saving.
+3. Upload several non-identifiable learning images and confirm that the page compresses and saves up to six images in one case.
 4. Open Profile, update your student details and upload a profile picture.
 5. Sign out, use **Forgot password?**, and test the emailed recovery link.
 6. Edit the case, print its clerking sheet and confirm the patient name is a blank handwritten line.

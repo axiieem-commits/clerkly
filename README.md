@@ -31,7 +31,7 @@ DEPLOYMENT.md        → GitHub, Supabase and Vercel walkthrough
 ## Local setup
 
 1. Create a Supabase project.
-2. Run both SQL files in `supabase/migrations` in number order in the SQL Editor.
+2. Run every SQL file in `supabase/migrations` in number order in the SQL Editor.
 3. Copy `.env.example` to `.env` and enter your Supabase Project URL and publishable key.
 4. Optionally add `GEMINI_API_KEY` for flexible AI responses.
 5. Run `npm install`.

@@ -11,6 +11,7 @@ const PORT = process.env.PORT || 3000;
 const IMAGE_BUCKET = "case-images";
 const PROFILE_IMAGE_BUCKET = "profile-images";
 const MAX_IMAGE_BYTES = 1024 * 1024;
+const MAX_CASE_IMAGES = 6;
 const REMEMBER_DURATION_MS = 20 * 24 * 60 * 60 * 1000;
 const PDF_LIB_BROWSER_BUNDLE = require.resolve("pdf-lib/dist/pdf-lib.esm.min.js");
 const isProduction = process.env.NODE_ENV === "production" || Boolean(process.env.VERCEL);
@@ -181,11 +182,44 @@ async function uploadImage(client, userId, dataUrl, bucket = IMAGE_BUCKET) {
   return objectPath;
 }
 
+function parseJsonArray(value, fieldName) {
+  if (Array.isArray(value)) return value;
+  if (value === undefined || value === null || value === "") return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed;
+  } catch {}
+  throw new Error(`${fieldName} must be a list.`);
+}
+
+function caseImagePayload(body) {
+  const images = parseJsonArray(body.case_images, "case_images");
+  if (!images.length && body.case_image) images.push(body.case_image);
+  if (images.length > MAX_CASE_IMAGES) throw new Error(`A case can have up to ${MAX_CASE_IMAGES} images.`);
+  return images;
+}
+
+async function uploadImages(client, userId, dataUrls) {
+  const paths = [];
+  try {
+    for (const dataUrl of dataUrls) paths.push(await uploadImage(client, userId, dataUrl));
+    return paths;
+  } catch (error) {
+    if (paths.length) await client.storage.from(IMAGE_BUCKET).remove(paths);
+    throw error;
+  }
+}
+
 async function addSignedImage(client, row) {
   if (row) { const { patient_identifiers_encrypted, ...safe } = row; row = safe; }
-  if (!row?.case_image_path) return { ...row, case_image: "" };
-  const { data, error } = await client.storage.from(IMAGE_BUCKET).createSignedUrl(row.case_image_path, 3600);
-  return { ...row, case_image: error ? "" : data.signedUrl };
+  const related = Array.isArray(row?.case_images) ? [...row.case_images].sort((a, b) => a.sort_order - b.sort_order) : [];
+  const paths = [...new Set([row?.case_image_path, ...related.map(image => image.storage_path)].filter(Boolean))];
+  const signedImages = (await Promise.all(paths.map(async path => {
+    const { data, error } = await client.storage.from(IMAGE_BUCKET).createSignedUrl(path, 3600);
+    return error ? null : { path, url: data.signedUrl };
+  }))).filter(Boolean);
+  const { case_images: _metadata, ...safeRow } = row || {};
+  return { ...safeRow, case_images: signedImages, case_image: signedImages[0]?.url || "" };
 }
 
 app.post("/api/auth/signup", (_req, res) => {
@@ -285,7 +319,7 @@ app.put("/api/profile", requireUser, async (req, res, next) => {
 
 app.get("/api/cases", requireUser, async (req, res, next) => {
   try {
-    const { data, error } = await req.supabase.from("clinical_cases").select("*").order("created_at", { ascending: false });
+    const { data, error } = await req.supabase.from("clinical_cases").select("*, case_images(id, storage_path, sort_order)").order("created_at", { ascending: false });
     if (error) throw error;
     res.json(await Promise.all(data.map(async row => {
       const result = await addSignedImage(req.supabase, row);
@@ -297,7 +331,7 @@ app.get("/api/cases", requireUser, async (req, res, next) => {
 
 app.get("/api/cases/:id", requireUser, async (req, res, next) => {
   try {
-    const { data, error } = await req.supabase.from("clinical_cases").select("*").eq("id", req.params.id).single();
+    const { data, error } = await req.supabase.from("clinical_cases").select("*, case_images(id, storage_path, sort_order)").eq("id", req.params.id).single();
     if (error || !data) return res.status(404).json({ message: "Case not found." });
     const identifiers = decryptIdentifiers(data.patient_identifiers_encrypted, req.user.id, data.id);
     res.json({ ...await addSignedImage(req.supabase, data), patient_name: identifiers.name, patient_mrn: identifiers.mrn });
@@ -305,41 +339,65 @@ app.get("/api/cases/:id", requireUser, async (req, res, next) => {
 });
 
 app.post("/api/cases", requireUser, async (req, res, next) => {
-  let uploadedPath = null;
+  let uploadedPaths = [];
+  let createdCaseId = null;
   try {
     const values = normalizeCase(req.body);
     const validationError = validateCase(values);
     if (validationError) return res.status(400).json({ message: validationError });
     const caseId = crypto.randomUUID();
+    createdCaseId = caseId;
     values.patient_identifiers_encrypted = encryptIdentifiers(req.body, req.user.id, caseId);
-    uploadedPath = await uploadImage(req.supabase, req.user.id, req.body.case_image);
-    const { data, error } = await req.supabase.from("clinical_cases").insert({ ...values, id: caseId, user_id: req.user.id, case_image_path: uploadedPath }).select("id").single();
+    uploadedPaths = await uploadImages(req.supabase, req.user.id, caseImagePayload(req.body));
+    const { data, error } = await req.supabase.from("clinical_cases").insert({ ...values, id: caseId, user_id: req.user.id, case_image_path: null }).select("id").single();
     if (error) throw error;
+    if (uploadedPaths.length) {
+      const { error: imageError } = await req.supabase.from("case_images").insert(uploadedPaths.map((storagePath, sortOrder) => ({ case_id: caseId, user_id: req.user.id, storage_path: storagePath, sort_order: sortOrder })));
+      if (imageError) throw imageError;
+    }
     res.status(201).json({ id: data.id, message: "Case saved successfully." });
   } catch (error) {
-    if (uploadedPath) await req.supabase.storage.from(IMAGE_BUCKET).remove([uploadedPath]);
+    if (createdCaseId) await req.supabase.from("clinical_cases").delete().eq("id", createdCaseId);
+    if (uploadedPaths.length) await req.supabase.storage.from(IMAGE_BUCKET).remove(uploadedPaths);
     next(error);
   }
 });
 
 app.put("/api/cases/:id", requireUser, async (req, res, next) => {
-  let uploadedPath = null;
+  let uploadedPaths = [];
   try {
     const values = normalizeCase(req.body);
     const validationError = validateCase(values);
     if (validationError) return res.status(400).json({ message: validationError });
-    const { data: existing, error: findError } = await req.supabase.from("clinical_cases").select("case_image_path").eq("id", req.params.id).single();
+    const { data: existing, error: findError } = await req.supabase.from("clinical_cases").select("case_image_path, case_images(id, storage_path, sort_order)").eq("id", req.params.id).single();
     if (findError || !existing) return res.status(404).json({ message: "Case not found." });
-    uploadedPath = await uploadImage(req.supabase, req.user.id, req.body.case_image);
+    const existingPaths = [...new Set([existing.case_image_path, ...(existing.case_images || []).map(image => image.storage_path)].filter(Boolean))];
+    const hasKeepList = Object.prototype.hasOwnProperty.call(req.body, "keep_case_image_paths");
+    const requestedKeep = hasKeepList ? parseJsonArray(req.body.keep_case_image_paths, "keep_case_image_paths").map(String) : existingPaths;
+    const keepPaths = requestedKeep.filter(path => existingPaths.includes(path));
+    const newImages = caseImagePayload(req.body);
+    if (keepPaths.length + newImages.length > MAX_CASE_IMAGES) return res.status(400).json({ message: `A case can have up to ${MAX_CASE_IMAGES} images.` });
+    uploadedPaths = await uploadImages(req.supabase, req.user.id, newImages);
     const update = { ...values, updated_at: new Date().toISOString() };
     if ('patient_name' in req.body || 'patient_mrn' in req.body) update.patient_identifiers_encrypted = encryptIdentifiers(req.body, req.user.id, req.params.id);
-    if (uploadedPath) update.case_image_path = uploadedPath;
+    if (hasKeepList) update.case_image_path = keepPaths.includes(existing.case_image_path) ? existing.case_image_path : null;
     const { data, error } = await req.supabase.from("clinical_cases").update(update).eq("id", req.params.id).select("id").single();
     if (error) throw error;
-    if (uploadedPath && existing.case_image_path) await req.supabase.storage.from(IMAGE_BUCKET).remove([existing.case_image_path]);
+    if (uploadedPaths.length) {
+      const { error: imageError } = await req.supabase.from("case_images").insert(uploadedPaths.map((storagePath, index) => ({ case_id: req.params.id, user_id: req.user.id, storage_path: storagePath, sort_order: keepPaths.length + index })));
+      if (imageError) throw imageError;
+    }
+    const retainedRows = (existing.case_images || []).filter(image => keepPaths.includes(image.storage_path));
+    const reorderResults = await Promise.all(retainedRows.map(image => req.supabase.from("case_images").update({ sort_order: keepPaths.indexOf(image.storage_path) }).eq("id", image.id)));
+    const reorderError = reorderResults.find(result => result.error)?.error;
+    if (reorderError) throw reorderError;
+    const removedPaths = existingPaths.filter(path => !keepPaths.includes(path));
+    const removedRows = (existing.case_images || []).filter(image => removedPaths.includes(image.storage_path));
+    if (removedRows.length) await req.supabase.from("case_images").delete().in("id", removedRows.map(image => image.id));
+    if (removedPaths.length) await req.supabase.storage.from(IMAGE_BUCKET).remove(removedPaths);
     res.json({ id: data.id, message: "Case updated successfully." });
   } catch (error) {
-    if (uploadedPath) await req.supabase.storage.from(IMAGE_BUCKET).remove([uploadedPath]);
+    if (uploadedPaths.length) await req.supabase.storage.from(IMAGE_BUCKET).remove(uploadedPaths);
     next(error);
   }
 });
@@ -355,11 +413,12 @@ app.put("/api/cases/:id/status", requireUser, async (req, res, next) => {
 
 app.delete("/api/cases/:id", requireUser, async (req, res, next) => {
   try {
-    const { data: existing, error: findError } = await req.supabase.from("clinical_cases").select("case_image_path").eq("id", req.params.id).single();
+    const { data: existing, error: findError } = await req.supabase.from("clinical_cases").select("case_image_path, case_images(storage_path)").eq("id", req.params.id).single();
     if (findError || !existing) return res.status(404).json({ message: "Case not found." });
     const { error } = await req.supabase.from("clinical_cases").delete().eq("id", req.params.id);
     if (error) throw error;
-    if (existing.case_image_path) await req.supabase.storage.from(IMAGE_BUCKET).remove([existing.case_image_path]);
+    const imagePaths = [...new Set([existing.case_image_path, ...(existing.case_images || []).map(image => image.storage_path)].filter(Boolean))];
+    if (imagePaths.length) await req.supabase.storage.from(IMAGE_BUCKET).remove(imagePaths);
     res.json({ message: "Case deleted." });
   } catch (error) { next(error); }
 });

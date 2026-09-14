@@ -101,8 +101,9 @@
           <header class="form-section-heading"><span>6</span><span><strong>Personal learning record</strong><small>Add your own learning without identifying the patient.</small></span></header>
           <div class="section-fields two-fields">
             <label class="form-field full-field">Notes or useful snippets<textarea name="notes_snippets" rows="5" placeholder="Your own notes or a short learning extract. Include its source when relevant."></textarea></label>
-            <label class="form-field full-field image-field">Learning image<input id="caseImageInput" type="file" accept="image/jpeg,image/png,image/webp"><span class="form-help" id="caseImageHelp">Optional. Images are compressed to about 0.5 MB before upload. Never upload an identifiable patient image.</span><img id="imagePreview" class="image-preview hidden" alt="Selected image preview"></label>
-            <input type="hidden" name="case_image" id="caseImageData">
+            <label class="form-field full-field image-field">Learning images<input id="caseImageInput" type="file" accept="image/jpeg,image/png,image/webp" multiple><span class="form-help" id="caseImageHelp">Optional. Add up to 6 JPG, PNG or WebP images. Each image is compressed before upload. Never upload an identifiable patient image.</span><span id="imagePreviewGrid" class="image-preview-grid" aria-live="polite"></span></label>
+            <input type="hidden" name="case_images" id="caseImagesData" value="[]">
+            <input type="hidden" name="keep_case_image_paths" id="keepCaseImagePaths" value="[]">
             <label class="form-field full-field">What I learnt<textarea name="learning" rows="5" required placeholder="Your main takeaway, uncertainty or knowledge gap"></textarea></label>
             <label class="form-field">Tags<input name="tags" placeholder="Respiratory, Infection"><span class="form-help">Separate tags with commas.</span></label>
             <label class="form-field">Review status<select name="status"><option>To review</option><option>Reviewed</option></select></label>
